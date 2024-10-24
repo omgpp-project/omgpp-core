@@ -1,1 +1,1 @@
-# ompp
+# Open Multiplayer Game Programming Platform
