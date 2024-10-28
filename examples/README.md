@@ -1,0 +1,1 @@
+Why there is no any examples? @torvalds
