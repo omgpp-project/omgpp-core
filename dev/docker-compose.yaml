@@ -1,0 +1,7 @@
+services:
+    rust-dev:
+        build: .
+        image: rust-dev
+        volumes:
+            - ${DEV_PROJECT_ROOT}:/home/rust/${DEV_PROJECT_NAME:-project}
+        network_mode: "host"
