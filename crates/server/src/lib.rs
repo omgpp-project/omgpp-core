@@ -1,9 +1,9 @@
 use md5;
-use std::{fmt::Debug, net::IpAddr, sync::LazyLock};
+use std::{collections::HashMap, fmt::Debug, fs::OpenOptions, net::IpAddr, sync::LazyLock};
 
 use gns::{
-    GnsConnectionEvent, GnsGlobal, GnsNetworkMessage, GnsSocket, GnsUtils, IsCreated, IsServer,
-    ToReceive,
+    GnsConnection, GnsConnectionEvent, GnsGlobal, GnsNetworkMessage, GnsSocket, GnsUtils,
+    IsCreated, IsServer, ToReceive,
 };
 use gns_sys::ESteamNetworkingConnectionState;
 use uuid::Uuid;
@@ -36,19 +36,21 @@ pub enum ConnectionState {
     Connecting = 2,
     Connected = 3,
 }
-
-pub struct Server {
-    ip: IpAddr,
-    port: u16,
-    active_connetions: Vec<Uuid>,
-    socket: GnsSocket<'static, 'static, IsServer>,
+struct ServerCallbacks {
     on_connect_requested_callback: OnConnectRequestCallback,
     on_connection_changed_callback: Option<OnConnectionChangedCallback>,
     on_message_callback: Option<OnMessageCallback>,
 }
+pub struct Server<'a> {
+    ip: IpAddr,
+    port: u16,
+    active_connetions: HashMap<Uuid, &'a GnsConnection>,
+    socket: GnsSocket<'static, 'static, IsServer>,
+    callbacks: ServerCallbacks,
+}
 
-impl Server {
-    pub fn new(ip: IpAddr, port: u16) -> ServerResult<Server> {
+impl<'a> Server<'a> {
+    pub fn new(ip: IpAddr, port: u16) -> ServerResult<Server<'a>> {
         let gns = GNS.as_ref()?;
         let gns_socket = GnsSocket::<IsCreated>::new(&gns.global, &gns.utils).unwrap();
         let address_to_bind = match ip {
@@ -57,30 +59,45 @@ impl Server {
         };
         let server_socket = gns_socket
             .listen(address_to_bind, port)
-            .or(ServerResult::Err("Create server socket".to_string()))?;
+            .or(ServerResult::Err("Cannot create server socket".to_string()))?;
 
         Ok(Server {
             ip,
             port,
             socket: server_socket,
-            active_connetions: vec![],
-            on_connect_requested_callback: Box::new(|_id| true),
-            on_connection_changed_callback: None,
-            on_message_callback: None,
+            active_connetions: HashMap::new(),
+            callbacks: ServerCallbacks {
+                on_connect_requested_callback: Box::new(|_id| true),
+                on_connection_changed_callback: None,
+                on_message_callback: None,
+            },
         })
     }
     /// Make 1 server cycle.
-    /// Generic paramter N specfies number of events and messages to recieve per a call
-    pub fn process<const N: usize>(&self) -> ServerResult<()> {
+    /// Generic paramter N specfies maximum number of events and messages to process per a call
+    pub fn process<const N: usize>(&mut self) -> ServerResult<()> {
         let socket = &self.socket;
         socket.poll_callbacks();
         let mut socket_op_result = ServerResult::Ok(());
-        socket.poll_event::<N>(|event| socket_op_result = self.process_connection_events(event));
-        socket.poll_messages::<N>(|msg| socket_op_result = self.process_messages(msg));
+        let _processed_event_count = socket.poll_event::<N>(|event| {
+            socket_op_result = Server::process_connection_events(
+                event,
+                &self.socket,
+                &self.callbacks,
+                &mut self.active_connetions,
+            )
+        });
+        let _processed_msg_count =
+            socket.poll_messages::<N>(|msg| socket_op_result = self.process_messages(msg));
 
         socket_op_result
     }
-    fn process_connection_events(&self, event: GnsConnectionEvent) -> ServerResult<()> {
+    fn process_connection_events(
+        event: GnsConnectionEvent,
+        socket: &GnsSocket<IsServer>,
+        callbacks: &ServerCallbacks,
+        active_connetions: &mut HashMap<Uuid, &'a GnsConnection>,
+    ) -> ServerResult<()> {
         let hash_str = format!(
             "{}:{}",
             event.info().remote_address().to_string(),
@@ -94,19 +111,19 @@ impl Server {
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_None,
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
             ) => {
-                if let Some(cb) = &self.on_connection_changed_callback{
-                    cb(&player_uuid, ConnectionState::Disconnecting);
+                if let Some(cb) = &callbacks.on_connection_changed_callback{
+                    cb(&player_uuid, ConnectionState::Connecting);
                 }
-                let should_accept = (self.on_connect_requested_callback)(&player_uuid);
+                let should_accept = (callbacks.on_connect_requested_callback)(&player_uuid);
                 if should_accept {
-                    self.socket.accept(event.connection()).or_else(|_err| {
+                    socket.accept(event.connection()).or_else(|_err| {
                         ServerResult::Err("Cannot accept the connection".to_string())
                     })?;
                 } else {
-                    // watch all possible reasons in ESteamNetConnectionEnd at steamworks_sdk_160\sdk\public\steam\steamnetworkingtypes.h
-                    self.socket.close_connection(
+                    // watch all possible reasons in ESteamNetConnectionEnd at steamworks_sdk_160\sdk\public\steam\steamnetworkingtypes.h (SteamworksSDK)
+                    socket.close_connection(
                         event.connection(),
-                        0,
+                        0,      // k_ESteamNetConnectionEnd_Invalid 
                         "You are not allowed to connect",
                         false,
                     );
@@ -119,27 +136,30 @@ impl Server {
                  ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_ClosedByPeer
                 |ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_ProblemDetectedLocally,
             ) => {
-                if let Some(cb) = &self.on_connection_changed_callback {
+                if active_connetions.contains_key(&player_uuid){
+                    active_connetions.remove(&player_uuid);
+                }
+                if let Some(cb) = &callbacks.on_connection_changed_callback {
                     cb(&player_uuid, ConnectionState::Disconnected);
                 }
             }
+            // player connected
             (
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connected,
             ) => {
-                if let Some(cb) = &self.on_connection_changed_callback {
+                if let Some(cb) = &callbacks.on_connection_changed_callback {
                     cb(&player_uuid, ConnectionState::Connected);
                 }
             }
 
             (_, _) => (),
         }
-        // if user tries to connect
         Ok(())
     }
     fn process_messages(&self, event: &GnsNetworkMessage<ToReceive>) -> ServerResult<()> {
-        let data =event.payload();
-        println!("{:?}",data);
+        let data = event.payload();
+        println!("{:?}", data);
         Ok(())
     }
     pub fn send(&self, player: Uuid, data: &Vec<u8>) -> ServerResult<()> {
@@ -160,20 +180,20 @@ impl Server {
         &mut self,
         callback: impl Fn(&Uuid) -> bool + 'static + Send,
     ) {
-        self.on_connect_requested_callback = Box::from(callback);
+        self.callbacks.on_connect_requested_callback = Box::from(callback);
     }
     pub fn register_on_connection_state_changed(
         &mut self,
         callback: impl Fn(&Uuid, ConnectionState) + 'static + Send,
     ) {
-        self.on_connection_changed_callback = Some(Box::from(callback));
+        self.callbacks.on_connection_changed_callback = Some(Box::from(callback));
     }
     pub fn register_on_message(&mut self, callback: impl Fn(&Uuid, i32, Vec<u8>) + 'static + Send) {
-        self.on_message_callback = Some(Box::from(callback));
+        self.callbacks.on_message_callback = Some(Box::from(callback));
     }
 }
 
-impl Debug for Server {
+impl<'a> Debug for Server<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Server")
             .field("ip", &self.ip)

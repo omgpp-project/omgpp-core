@@ -26,12 +26,12 @@ fn main() {
 
 fn start_server() {
     println!("Hello! Im Server");
-    let mut server = Server::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 55655).unwrap();
+    let mut server = Server::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 55655).unwrap();
     server.register_on_connect_requested(|id| true);
     server.register_on_connection_state_changed(|id, state| println!("{:?} {:?}", id, state));
-
-    // server.register_on_message(|id,msg_type,data| println!(""));
-    // server.start().unwrap();
+    server.register_on_message(|id, _msg_type,data| {
+        println!("{:?} {:?}", id, data);
+    });
 
     loop {
         _ = server.process::<128>();
@@ -97,7 +97,7 @@ fn start_client() {
 
         let port: u16 = 55655;
         let gns_socket = GnsSocket::<IsCreated>::new(&gns_global, &gns_utils).unwrap();
-        let client = gns_socket.connect(Ipv6Addr::LOCALHOST, port).unwrap();
+        let client = gns_socket.connect(Ipv4Addr::LOCALHOST.to_ipv6_mapped(), port).unwrap();
         let mut last_update = Instant::now();
         let mut msg_buf = Vec::<String>::new();
         loop {
