@@ -33,17 +33,6 @@ fn start_server() {
         println!("{:?} {:?}", id, data);
     });
 
-    loop {
-        _ = server.process::<128>();
-    }
-
-    // Now that we initiated a connection, there is three operation we must loop over:
-    // - polling for new messages
-    // - polling for connection status change
-    // - polling for callbacks (low-level callbacks required by the underlying library).
-    // Important to know, regardless of the type of socket, whether it is in [`IsClient`] or [`IsServer`] state, theses three operations are the same.
-    // The only difference is that polling for messages and status on the client only act on the client connection, while polling for messages and status on a server yield event for all connected clients.
-
     /*
         sequenceDiagram
         engine->>+client: RunFrame()
@@ -56,37 +45,10 @@ fn start_server() {
 
         client->>-engine:
     */
-    // loop {
-    //     // Run the low-level callbacks.
-    //     server.poll_callbacks();
-
-    //     let _actual_nb_of_messages_processed = server.poll_messages::<128>(|message| {
-    //         println!("Msg income");
-    //         println!("{}", core::str::from_utf8(message.payload()).unwrap());
-    //     });
-
-    //     // Don't do anything with events.
-    //     // One would check the event for connection status, i.e. doing something when we are connected/disconnected from the server.
-    //     let _actual_nb_of_events_processed = server.poll_event::<128>(|event| {
-
-    //         match (event.old_state(), event.info().state()) {
-    //             // A client is about to connect, accept it.
-    //             (
-    //               ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_None,
-    //               ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
-    //             ) => {
-    //               let _result = server.accept(event.connection());
-    //             }
-    //             _=>()
-    //         }
-    //         println!(
-    //             "Connection {}",
-    //             format!("{:?} {:?}", &event.info().state(), event.info().remote_address())
-    //         );
-    //     });
-
-    // send data to users with fixed FPS
-    // }
+    loop {
+        _ = server.process::<128>();
+        // send data to users with fixed FPS
+    }
 }
 fn start_client() {
     println!("Hello! Im a client");

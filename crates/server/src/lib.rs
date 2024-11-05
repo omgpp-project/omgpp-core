@@ -200,7 +200,7 @@ impl<'a> Server<'a> {
         let sender = tracked_connections
             .get_by_right(&connection)
             .ok_or_else(|| "Unknown connection".to_string())?;
-
+        // cb stands for callback
         if let Some(cb) = &callbacks.on_message_callback {
             cb(sender, 0, Vec::from(data));
         }
