@@ -1,5 +1,5 @@
 use md5;
-use std::{collections::HashMap, fmt::Debug, fs::OpenOptions, net::IpAddr, sync::LazyLock};
+use std::{collections::HashMap, fmt::Debug, marker::PhantomData, net::IpAddr, sync::LazyLock};
 
 use gns::{
     GnsConnection, GnsConnectionEvent, GnsGlobal, GnsNetworkMessage, GnsSocket, GnsUtils,
@@ -44,9 +44,10 @@ struct ServerCallbacks {
 pub struct Server<'a> {
     ip: IpAddr,
     port: u16,
-    active_connetions: HashMap<Uuid, &'a GnsConnection>,
+    active_connetions: HashMap<Uuid, GnsConnection>,
     socket: GnsSocket<'static, 'static, IsServer>,
     callbacks: ServerCallbacks,
+    phantom: PhantomData<&'a bool>,
 }
 
 impl<'a> Server<'a> {
@@ -71,6 +72,7 @@ impl<'a> Server<'a> {
                 on_connection_changed_callback: None,
                 on_message_callback: None,
             },
+            phantom: Default::default()
         })
     }
     /// Make 1 server cycle.
@@ -92,11 +94,47 @@ impl<'a> Server<'a> {
 
         socket_op_result
     }
+   
+    fn process_messages(&self, event: &GnsNetworkMessage<ToReceive>) -> ServerResult<()> {
+        let data = event.payload();
+        println!("{:?}", data);
+        Ok(())
+    }
+    pub fn send(&self, player: Uuid, data: &Vec<u8>) -> ServerResult<()> {
+        Ok(())
+    }
+    pub fn send_reliable(&self, player: Uuid, data: &Vec<u8>) -> ServerResult<()> {
+        Ok(())
+    }
+
+    pub fn broadcast(&self, data: &Vec<u8>) -> ServerResult<()> {
+        Ok(())
+    }
+    pub fn broadcast_reliable(&self, data: &Vec<u8>) -> ServerResult<()> {
+        Ok(())
+    }
+
+    pub fn register_on_connect_requested(
+        &mut self,
+        callback: impl Fn(&Uuid) -> bool + 'static + Send,
+    ) {
+        self.callbacks.on_connect_requested_callback = Box::from(callback);
+    }
+    pub fn register_on_connection_state_changed(
+        &mut self,
+        callback: impl Fn(&Uuid, ConnectionState) + 'static + Send,
+    ) {
+        self.callbacks.on_connection_changed_callback = Some(Box::from(callback));
+    }
+    pub fn register_on_message(&mut self, callback: impl Fn(&Uuid, i32, Vec<u8>) + 'static + Send) {
+        self.callbacks.on_message_callback = Some(Box::from(callback));
+    }
+
     fn process_connection_events(
         event: GnsConnectionEvent,
         socket: &GnsSocket<IsServer>,
         callbacks: &ServerCallbacks,
-        active_connetions: &mut HashMap<Uuid, &'a GnsConnection>,
+        active_connetions: &mut HashMap<Uuid, GnsConnection>,
     ) -> ServerResult<()> {
         let hash_str = format!(
             "{}:{}",
@@ -148,6 +186,8 @@ impl<'a> Server<'a> {
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connected,
             ) => {
+                active_connetions.insert(player_uuid.clone(),event.connection());
+
                 if let Some(cb) = &callbacks.on_connection_changed_callback {
                     cb(&player_uuid, ConnectionState::Connected);
                 }
@@ -156,40 +196,6 @@ impl<'a> Server<'a> {
             (_, _) => (),
         }
         Ok(())
-    }
-    fn process_messages(&self, event: &GnsNetworkMessage<ToReceive>) -> ServerResult<()> {
-        let data = event.payload();
-        println!("{:?}", data);
-        Ok(())
-    }
-    pub fn send(&self, player: Uuid, data: &Vec<u8>) -> ServerResult<()> {
-        Ok(())
-    }
-    pub fn send_reliable(&self, player: Uuid, data: &Vec<u8>) -> ServerResult<()> {
-        Ok(())
-    }
-
-    pub fn broadcast(&self, data: &Vec<u8>) -> ServerResult<()> {
-        Ok(())
-    }
-    pub fn broadcast_reliable(&self, data: &Vec<u8>) -> ServerResult<()> {
-        Ok(())
-    }
-
-    pub fn register_on_connect_requested(
-        &mut self,
-        callback: impl Fn(&Uuid) -> bool + 'static + Send,
-    ) {
-        self.callbacks.on_connect_requested_callback = Box::from(callback);
-    }
-    pub fn register_on_connection_state_changed(
-        &mut self,
-        callback: impl Fn(&Uuid, ConnectionState) + 'static + Send,
-    ) {
-        self.callbacks.on_connection_changed_callback = Some(Box::from(callback));
-    }
-    pub fn register_on_message(&mut self, callback: impl Fn(&Uuid, i32, Vec<u8>) + 'static + Send) {
-        self.callbacks.on_message_callback = Some(Box::from(callback));
     }
 }
 
