@@ -1,6 +1,6 @@
 use std::{
     io::stdin,
-    net::Ipv6Addr,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::mpsc,
     thread,
     time::{Duration, Instant},
@@ -8,6 +8,7 @@ use std::{
 
 use gns::{GnsGlobal, GnsSocket, GnsUtils, IsCreated};
 use gns_sys::{k_nSteamNetworkingSend_Reliable, k_nSteamNetworkingSend_Unreliable, ESteamNetworkingConnectionState};
+use server::Server;
 use std::env;
 
 fn main() {
@@ -25,12 +26,20 @@ fn main() {
 
 fn start_server() {
     println!("Hello! Im Server");
-    let gns_global = GnsGlobal::get().unwrap();
-    let gns_utils = GnsUtils::new().unwrap();
-
-    let port: u16 = 55655;
-    let gns_socket = GnsSocket::<IsCreated>::new(&gns_global, &gns_utils).unwrap();
-    let server = gns_socket.listen(Ipv6Addr::LOCALHOST, port).unwrap();
+    let mut server = Server::new(IpAddr::V4(Ipv4Addr::LOCALHOST),55655);
+    server.register_on_connect_requested(|id| true);
+    server.register_on_message(|id,msg_type,data| println!(""));
+    server.start().unwrap();
+   
+    loop {
+        let mut input = String::new();
+        _ = std::io::stdin().read_line(&mut input).expect("Some error");
+        if input.trim() == "c" {
+            server.stop();
+            thread::sleep(Duration::from_secs(4));
+            println!("ENDED");
+        }
+    }
 
     // Now that we initiated a connection, there is three operation we must loop over:
     // - polling for new messages
@@ -51,37 +60,37 @@ fn start_server() {
 
         client->>-engine:
     */
-    loop {
-        // Run the low-level callbacks.
-        server.poll_callbacks();
+    // loop {
+    //     // Run the low-level callbacks.
+    //     server.poll_callbacks();
 
-        let _actual_nb_of_messages_processed = server.poll_messages::<128>(|message| {
-            println!("Msg income");
-            println!("{}", core::str::from_utf8(message.payload()).unwrap());
-        });
+    //     let _actual_nb_of_messages_processed = server.poll_messages::<128>(|message| {
+    //         println!("Msg income");
+    //         println!("{}", core::str::from_utf8(message.payload()).unwrap());
+    //     });
 
-        // Don't do anything with events.
-        // One would check the event for connection status, i.e. doing something when we are connected/disconnected from the server.
-        let _actual_nb_of_events_processed = server.poll_event::<128>(|event| {
+    //     // Don't do anything with events.
+    //     // One would check the event for connection status, i.e. doing something when we are connected/disconnected from the server.
+    //     let _actual_nb_of_events_processed = server.poll_event::<128>(|event| {
  
-            match (event.old_state(), event.info().state()) {
-                // A client is about to connect, accept it.
-                (
-                  ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_None,
-                  ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
-                ) => {
-                  let _result = server.accept(event.connection());
-                }
-                _=>()
-            }
-            println!(
-                "Connection {}",
-                format!("{:?} {:?}", &event.info().state(), event.info().remote_address())
-            );
-        });
+    //         match (event.old_state(), event.info().state()) {
+    //             // A client is about to connect, accept it.
+    //             (
+    //               ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_None,
+    //               ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
+    //             ) => {
+    //               let _result = server.accept(event.connection());
+    //             }
+    //             _=>()
+    //         }
+    //         println!(
+    //             "Connection {}",
+    //             format!("{:?} {:?}", &event.info().state(), event.info().remote_address())
+    //         );
+    //     });
 
         // send data to users with fixed FPS
-    }
+    // }
 }
 fn start_client() {
     println!("Hello! Im a client");

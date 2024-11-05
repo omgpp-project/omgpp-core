@@ -1,11 +1,8 @@
 use std::{
-    fmt::{Debug, Error},
-    net::{IpAddr, Ipv6Addr},
-    ops::Deref,
-    rc::Rc,
-    str::FromStr,
-    sync::{atomic::{AtomicBool, Ordering}, Arc},
-    thread::{self, JoinHandle},
+    borrow::Borrow, fmt::{Debug, Error}, net::{IpAddr, Ipv6Addr}, ops::Deref, rc::Rc, str::FromStr, sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, LazyLock,
+    }, thread::{self, JoinHandle}, time::{Duration, Instant}
 };
 
 use gns::{GnsGlobal, GnsSocket, GnsUtils, IsCreated, IsServer};
@@ -17,7 +14,19 @@ type OnMessageCallback = Box<dyn FnMut(&Uuid, i32, Vec<u8>) + Send + 'static>;
 
 type ServerResult<T> = Result<T, String>; // TODO replace error with enum
 
-static GNS_INIT: AtomicBool = AtomicBool::new(false);
+struct GnsWrapper {
+    global: GnsGlobal,
+    utils: GnsUtils,
+}
+unsafe impl Send for GnsWrapper {}
+unsafe impl Sync for GnsWrapper {}
+
+static GNS: LazyLock<ServerResult<GnsWrapper>> = LazyLock::new(|| {
+    Ok(GnsWrapper {
+        global: GnsGlobal::get()?,
+        utils: GnsUtils::new().ok_or("Error occurred when creating GnsUtils")?,
+    })
+});
 
 #[allow(dead_code)]
 pub enum ConnectionState {
@@ -51,7 +60,10 @@ impl<'a> Deref for ServerThreadHandler<'a> {
 unsafe impl<'a> Send for ServerThreadHandler<'a> {}
 unsafe impl<'a> Sync for ServerThreadHandler<'a> {}
 
- 
+struct GnsSocketThreadWrapper<'x, 'y>(GnsSocket<'x, 'y, IsServer>);
+unsafe impl<'x, 'y> Send for GnsSocketThreadWrapper<'x, 'y> {}
+unsafe impl<'x, 'y> Sync for GnsSocketThreadWrapper<'x, 'y> {}
+
 impl Server {
     pub fn new(ip: IpAddr, port: u16) -> Server {
         Server {
@@ -66,27 +78,32 @@ impl Server {
         }
     }
 
-    pub fn start(&'static mut self) -> ServerResult<()> {
+    pub fn start(&mut self) -> ServerResult<()> {
         if let Some(_) = &self.thread {
             return Err("Cannot start a server. Server already running".to_string());
         }
-        let gns_global = GnsGlobal::get()?;
-        let gns_utils = GnsUtils::new().ok_or("Error occurred when creating GnsUtils")?;
+        let gns = GNS.as_ref()?;
 
-        let gns_socket = GnsSocket::<IsCreated>::new(&gns_global, &gns_utils).unwrap();
-        let mut address_to_bind = match self.ip {
+        let gns_socket = GnsSocket::<IsCreated>::new(&gns.global, &gns.utils).unwrap();
+        let address_to_bind = match self.ip {
             IpAddr::V4(v4) => v4.to_ipv6_mapped(),
             IpAddr::V6(v6) => v6,
         };
         let server_socket = gns_socket
             .listen(address_to_bind, self.port)
             .or(ServerResult::Err("Create server socket".to_string()))?;
-        self.thread = Some(thread::spawn(Server::server_thread_executor(self.should_terminate_thread, )));
+        let thread_handle = GnsSocketThreadWrapper(server_socket);
+        let cancel_token = self.should_terminate_thread.clone();
+        self.thread = Some(thread::spawn(|| {
+            Server::server_thread_executor(cancel_token, thread_handle)
+        }));
         Ok(())
     }
-    pub fn stop(&self) -> ServerResult<()> {
-        self.should_terminate_thread.store(false, Ordering::Relaxed);
-        Ok(())
+    pub fn thread(&self) -> Option<&JoinHandle<()>>{
+        self.thread.as_ref()
+    }
+    pub fn stop(&self) {
+        self.should_terminate_thread.store(true, Ordering::Relaxed);
     }
     pub fn send(&self, player: Uuid, data: &Vec<u8>) -> ServerResult<()> {
         Ok(())
@@ -121,9 +138,11 @@ impl Server {
         self.on_message_callback = Some(Box::from(callback));
     }
 
-    fn server_thread_executor(cancellation_token: Arc<AtomicBool>, socket: Arc<GnsSocket<IsServer>>,) {
+    fn server_thread_executor(cancellation_token: Arc<AtomicBool>, socket_wrapper: GnsSocketThreadWrapper) {
         while cancellation_token.load(Ordering::Relaxed) != true {
-
+            let socket = &socket_wrapper.0;
+            socket.poll_callbacks();
+            
         }
     }
 }
