@@ -1,13 +1,13 @@
 use std::{
-    io::stdin,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::mpsc,
     thread,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use gns::{GnsGlobal, GnsSocket, GnsUtils, IsCreated};
-use gns_sys::{k_nSteamNetworkingSend_Reliable, k_nSteamNetworkingSend_Unreliable, ESteamNetworkingConnectionState};
+use gns_sys::k_nSteamNetworkingSend_Reliable;
+use gns_sys::k_nSteamNetworkingSend_Unreliable;
 use server::Server;
 use std::env;
 
@@ -26,19 +26,15 @@ fn main() {
 
 fn start_server() {
     println!("Hello! Im Server");
-    let mut server = Server::new(IpAddr::V4(Ipv4Addr::LOCALHOST),55655);
+    let mut server = Server::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 55655).unwrap();
     server.register_on_connect_requested(|id| true);
-    server.register_on_message(|id,msg_type,data| println!(""));
-    server.start().unwrap();
-   
+    server.register_on_connection_state_changed(|id, state| println!("{:?} {:?}", id, state));
+
+    // server.register_on_message(|id,msg_type,data| println!(""));
+    // server.start().unwrap();
+
     loop {
-        let mut input = String::new();
-        _ = std::io::stdin().read_line(&mut input).expect("Some error");
-        if input.trim() == "c" {
-            server.stop();
-            thread::sleep(Duration::from_secs(4));
-            println!("ENDED");
-        }
+        _ = server.process::<128>();
     }
 
     // Now that we initiated a connection, there is three operation we must loop over:
@@ -72,7 +68,7 @@ fn start_server() {
     //     // Don't do anything with events.
     //     // One would check the event for connection status, i.e. doing something when we are connected/disconnected from the server.
     //     let _actual_nb_of_events_processed = server.poll_event::<128>(|event| {
- 
+
     //         match (event.old_state(), event.info().state()) {
     //             // A client is about to connect, accept it.
     //             (
@@ -89,7 +85,7 @@ fn start_server() {
     //         );
     //     });
 
-        // send data to users with fixed FPS
+    // send data to users with fixed FPS
     // }
 }
 fn start_client() {
@@ -123,8 +119,8 @@ fn start_client() {
                 last_update = Instant::now();
                 if msg_buf.len() > 0 {
                     // take last messages and send
-                    for msg in &msg_buf{
-                        println!("Sent {}",msg);
+                    for msg in &msg_buf {
+                        println!("Sent {}", msg);
                         client.send_messages(vec![client.utils().allocate_message(
                             client.connection(),
                             k_nSteamNetworkingSend_Unreliable,
@@ -137,7 +133,7 @@ fn start_client() {
             loop {
                 if let Ok(received) = rx_channel.try_recv() {
                     msg_buf.push(received);
-                }else {
+                } else {
                     break;
                 }
             }

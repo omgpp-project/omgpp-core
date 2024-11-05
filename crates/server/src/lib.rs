@@ -1,16 +1,16 @@
-use std::{
-    borrow::Borrow, fmt::{Debug, Error}, net::{IpAddr, Ipv6Addr}, ops::Deref, rc::Rc, str::FromStr, sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, LazyLock,
-    }, thread::{self, JoinHandle}, time::{Duration, Instant}
-};
+use md5;
+use std::{fmt::Debug, net::IpAddr, sync::LazyLock};
 
-use gns::{GnsGlobal, GnsSocket, GnsUtils, IsCreated, IsServer};
+use gns::{
+    GnsConnectionEvent, GnsGlobal, GnsNetworkMessage, GnsSocket, GnsUtils, IsCreated, IsServer,
+    ToReceive,
+};
+use gns_sys::ESteamNetworkingConnectionState;
 use uuid::Uuid;
 
-type OnConnectRequestCallback = Box<dyn FnMut(&Uuid) -> bool + Send + 'static>;
-type OnConnectionChangedCallback = Box<dyn FnMut(&Uuid, ConnectionState) + Send + 'static>;
-type OnMessageCallback = Box<dyn FnMut(&Uuid, i32, Vec<u8>) + Send + 'static>;
+type OnConnectRequestCallback = Box<dyn Fn(&Uuid) -> bool + Send + 'static>;
+type OnConnectionChangedCallback = Box<dyn Fn(&Uuid, ConnectionState) + Send + 'static>;
+type OnMessageCallback = Box<dyn Fn(&Uuid, i32, Vec<u8>) + Send + 'static>;
 
 type ServerResult<T> = Result<T, String>; // TODO replace error with enum
 
@@ -29,6 +29,7 @@ static GNS: LazyLock<ServerResult<GnsWrapper>> = LazyLock::new(|| {
 });
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub enum ConnectionState {
     Disconnected = 0,
     Disconnecting = 1,
@@ -40,70 +41,106 @@ pub struct Server {
     ip: IpAddr,
     port: u16,
     active_connetions: Vec<Uuid>,
-    thread: Option<JoinHandle<()>>,
-    should_terminate_thread: Arc<AtomicBool>,
-    on_connect_requested_callback: Option<OnConnectRequestCallback>,
+    socket: GnsSocket<'static, 'static, IsServer>,
+    on_connect_requested_callback: OnConnectRequestCallback,
     on_connection_changed_callback: Option<OnConnectionChangedCallback>,
     on_message_callback: Option<OnMessageCallback>,
 }
 
-struct ServerThreadHandler<'a> {
-    value: &'a Server,
-}
-impl<'a> Deref for ServerThreadHandler<'a> {
-    type Target = Server;
-
-    fn deref(&self) -> &Self::Target {
-        return self.value;
-    }
-}
-unsafe impl<'a> Send for ServerThreadHandler<'a> {}
-unsafe impl<'a> Sync for ServerThreadHandler<'a> {}
-
-struct GnsSocketThreadWrapper<'x, 'y>(GnsSocket<'x, 'y, IsServer>);
-unsafe impl<'x, 'y> Send for GnsSocketThreadWrapper<'x, 'y> {}
-unsafe impl<'x, 'y> Sync for GnsSocketThreadWrapper<'x, 'y> {}
-
 impl Server {
-    pub fn new(ip: IpAddr, port: u16) -> Server {
-        Server {
-            ip,
-            port,
-            thread: None,
-            should_terminate_thread: Arc::new(AtomicBool::new(false)),
-            active_connetions: vec![],
-            on_connect_requested_callback: None,
-            on_connection_changed_callback: None,
-            on_message_callback: None,
-        }
-    }
-
-    pub fn start(&mut self) -> ServerResult<()> {
-        if let Some(_) = &self.thread {
-            return Err("Cannot start a server. Server already running".to_string());
-        }
+    pub fn new(ip: IpAddr, port: u16) -> ServerResult<Server> {
         let gns = GNS.as_ref()?;
-
         let gns_socket = GnsSocket::<IsCreated>::new(&gns.global, &gns.utils).unwrap();
-        let address_to_bind = match self.ip {
+        let address_to_bind = match ip {
             IpAddr::V4(v4) => v4.to_ipv6_mapped(),
             IpAddr::V6(v6) => v6,
         };
         let server_socket = gns_socket
-            .listen(address_to_bind, self.port)
+            .listen(address_to_bind, port)
             .or(ServerResult::Err("Create server socket".to_string()))?;
-        let thread_handle = GnsSocketThreadWrapper(server_socket);
-        let cancel_token = self.should_terminate_thread.clone();
-        self.thread = Some(thread::spawn(|| {
-            Server::server_thread_executor(cancel_token, thread_handle)
-        }));
+
+        Ok(Server {
+            ip,
+            port,
+            socket: server_socket,
+            active_connetions: vec![],
+            on_connect_requested_callback: Box::new(|_id| true),
+            on_connection_changed_callback: None,
+            on_message_callback: None,
+        })
+    }
+    /// Make 1 server cycle.
+    /// Generic paramter N specfies number of events and messages to recieve per a call
+    pub fn process<const N: usize>(&self) -> ServerResult<()> {
+        let socket = &self.socket;
+        socket.poll_callbacks();
+        let mut socket_op_result = ServerResult::Ok(());
+        socket.poll_event::<N>(|event| socket_op_result = self.process_connection_events(event));
+        socket.poll_messages::<N>(|msg| socket_op_result = self.process_messages(msg));
+
+        socket_op_result
+    }
+    fn process_connection_events(&self, event: GnsConnectionEvent) -> ServerResult<()> {
+        let hash_str = format!(
+            "{}:{}",
+            event.info().remote_address().to_string(),
+            event.info().remote_port().to_string()
+        );
+        let hash_digest = md5::compute(hash_str);
+        let player_uuid = Uuid::from_bytes(hash_digest.0);
+        match (event.old_state(), event.info().state()) {
+            // player tries to connect
+            (
+                ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_None,
+                ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
+            ) => {
+                if let Some(cb) = &self.on_connection_changed_callback{
+                    cb(&player_uuid, ConnectionState::Disconnecting);
+                }
+                let should_accept = (self.on_connect_requested_callback)(&player_uuid);
+                if should_accept {
+                    self.socket.accept(event.connection()).or_else(|_err| {
+                        ServerResult::Err("Cannot accept the connection".to_string())
+                    })?;
+                } else {
+                    // watch all possible reasons in ESteamNetConnectionEnd at steamworks_sdk_160\sdk\public\steam\steamnetworkingtypes.h
+                    self.socket.close_connection(
+                        event.connection(),
+                        0,
+                        "You are not allowed to connect",
+                        false,
+                    );
+                }
+            }
+            // player disconnected gracefully (? or may be not)
+            (
+                ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting
+                | ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connected,
+                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_ClosedByPeer
+                |ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_ProblemDetectedLocally,
+            ) => {
+                if let Some(cb) = &self.on_connection_changed_callback {
+                    cb(&player_uuid, ConnectionState::Disconnected);
+                }
+            }
+            (
+                ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
+                ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connected,
+            ) => {
+                if let Some(cb) = &self.on_connection_changed_callback {
+                    cb(&player_uuid, ConnectionState::Connected);
+                }
+            }
+
+            (_, _) => (),
+        }
+        // if user tries to connect
         Ok(())
     }
-    pub fn thread(&self) -> Option<&JoinHandle<()>>{
-        self.thread.as_ref()
-    }
-    pub fn stop(&self) {
-        self.should_terminate_thread.store(true, Ordering::Relaxed);
+    fn process_messages(&self, event: &GnsNetworkMessage<ToReceive>) -> ServerResult<()> {
+        let data =event.payload();
+        println!("{:?}",data);
+        Ok(())
     }
     pub fn send(&self, player: Uuid, data: &Vec<u8>) -> ServerResult<()> {
         Ok(())
@@ -121,29 +158,18 @@ impl Server {
 
     pub fn register_on_connect_requested(
         &mut self,
-        callback: impl FnMut(&Uuid) -> bool + 'static + Send,
+        callback: impl Fn(&Uuid) -> bool + 'static + Send,
     ) {
-        self.on_connect_requested_callback = Some(Box::from(callback));
+        self.on_connect_requested_callback = Box::from(callback);
     }
     pub fn register_on_connection_state_changed(
         &mut self,
-        callback: impl FnMut(&Uuid, ConnectionState) + 'static + Send,
+        callback: impl Fn(&Uuid, ConnectionState) + 'static + Send,
     ) {
         self.on_connection_changed_callback = Some(Box::from(callback));
     }
-    pub fn register_on_message(
-        &mut self,
-        callback: impl FnMut(&Uuid, i32, Vec<u8>) + 'static + Send,
-    ) {
+    pub fn register_on_message(&mut self, callback: impl Fn(&Uuid, i32, Vec<u8>) + 'static + Send) {
         self.on_message_callback = Some(Box::from(callback));
-    }
-
-    fn server_thread_executor(cancellation_token: Arc<AtomicBool>, socket_wrapper: GnsSocketThreadWrapper) {
-        while cancellation_token.load(Ordering::Relaxed) != true {
-            let socket = &socket_wrapper.0;
-            socket.poll_callbacks();
-            
-        }
     }
 }
 
