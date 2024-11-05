@@ -1,9 +1,10 @@
+use bimap::BiHashMap;
 use md5;
 use std::{collections::HashMap, fmt::Debug, marker::PhantomData, net::IpAddr, sync::LazyLock};
 
 use gns::{
-    GnsConnection, GnsConnectionEvent, GnsGlobal, GnsNetworkMessage, GnsSocket, GnsUtils,
-    IsCreated, IsServer, ToReceive,
+    GnsConnection, GnsConnectionEvent, GnsConnectionInfo, GnsGlobal, GnsNetworkMessage, GnsSocket,
+    GnsUtils, IsCreated, IsServer, ToReceive,
 };
 use gns_sys::ESteamNetworkingConnectionState;
 use uuid::Uuid;
@@ -44,7 +45,7 @@ struct ServerCallbacks {
 pub struct Server<'a> {
     ip: IpAddr,
     port: u16,
-    active_connetions: HashMap<Uuid, GnsConnection>,
+    active_connetions: BiHashMap<Uuid, GnsConnection>,
     socket: GnsSocket<'static, 'static, IsServer>,
     callbacks: ServerCallbacks,
     phantom: PhantomData<&'a bool>,
@@ -66,13 +67,13 @@ impl<'a> Server<'a> {
             ip,
             port,
             socket: server_socket,
-            active_connetions: HashMap::new(),
+            active_connetions: BiHashMap::new(),
             callbacks: ServerCallbacks {
                 on_connect_requested_callback: Box::new(|_id| true),
                 on_connection_changed_callback: None,
                 on_message_callback: None,
             },
-            phantom: Default::default()
+            phantom: Default::default(),
         })
     }
     /// Make 1 server cycle.
@@ -89,17 +90,14 @@ impl<'a> Server<'a> {
                 &mut self.active_connetions,
             )
         });
-        let _processed_msg_count =
-            socket.poll_messages::<N>(|msg| socket_op_result = self.process_messages(msg));
+        let _processed_msg_count = socket.poll_messages::<N>(|msg| {
+            socket_op_result =
+                Server::process_messages(msg, &self.active_connetions, &self.callbacks)
+        });
 
         socket_op_result
     }
-   
-    fn process_messages(&self, event: &GnsNetworkMessage<ToReceive>) -> ServerResult<()> {
-        let data = event.payload();
-        println!("{:?}", data);
-        Ok(())
-    }
+
     pub fn send(&self, player: Uuid, data: &Vec<u8>) -> ServerResult<()> {
         Ok(())
     }
@@ -134,15 +132,9 @@ impl<'a> Server<'a> {
         event: GnsConnectionEvent,
         socket: &GnsSocket<IsServer>,
         callbacks: &ServerCallbacks,
-        active_connetions: &mut HashMap<Uuid, GnsConnection>,
+        active_connetions: &mut BiHashMap<Uuid, GnsConnection>,
     ) -> ServerResult<()> {
-        let hash_str = format!(
-            "{}:{}",
-            event.info().remote_address().to_string(),
-            event.info().remote_port().to_string()
-        );
-        let hash_digest = md5::compute(hash_str);
-        let player_uuid = Uuid::from_bytes(hash_digest.0);
+        let player_uuid = Server::generate_uuid(&event.info());
         match (event.old_state(), event.info().state()) {
             // player tries to connect
             (
@@ -174,8 +166,8 @@ impl<'a> Server<'a> {
                  ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_ClosedByPeer
                 |ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_ProblemDetectedLocally,
             ) => {
-                if active_connetions.contains_key(&player_uuid){
-                    active_connetions.remove(&player_uuid);
+                if active_connetions.contains_left(&player_uuid){
+                    active_connetions.remove_by_left(&player_uuid);
                 }
                 if let Some(cb) = &callbacks.on_connection_changed_callback {
                     cb(&player_uuid, ConnectionState::Disconnected);
@@ -196,6 +188,33 @@ impl<'a> Server<'a> {
             (_, _) => (),
         }
         Ok(())
+    }
+
+    fn process_messages(
+        event: &GnsNetworkMessage<ToReceive>,
+        tracked_connections: &BiHashMap<Uuid, GnsConnection>,
+        callbacks: &ServerCallbacks,
+    ) -> ServerResult<()> {
+        let data = event.payload();
+        let connection = event.connection();
+        let sender = tracked_connections
+            .get_by_right(&connection)
+            .ok_or_else(|| "Unknown connection".to_string())?;
+
+        if let Some(cb) = &callbacks.on_message_callback {
+            cb(sender, 0, Vec::from(data));
+        }
+        Ok(())
+    }
+    fn generate_uuid(info: &GnsConnectionInfo) -> Uuid {
+        let hash_str = format!(
+            "{}:{}",
+            info.remote_address().to_string(),
+            info.remote_port().to_string()
+        );
+        let hash_digest = md5::compute(hash_str);
+
+        Uuid::from_bytes(hash_digest.0)
     }
 }
 

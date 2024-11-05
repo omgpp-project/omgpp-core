@@ -7,6 +7,7 @@ edition = "2021"
 gns = { git="https://github.com/hussein-aitlahcen/gns-rs.git",rev="a0fc575" }
 gns-sys = { git="https://github.com/hussein-aitlahcen/gns-rs.git",rev="a0fc575" }
 md5 = { version="0.7.0" }
+bimap = { version="0.6.3" }
 
 [dependencies.uuid]
 version = "1.11.0"
