@@ -10,7 +10,6 @@ use gns_sys::k_nSteamNetworkingSend_Reliable;
 use gns_sys::k_nSteamNetworkingSend_Unreliable;
 use server::Server;
 use std::env;
-
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() == 1 {
@@ -45,8 +44,15 @@ fn start_server() {
 
         client->>-engine:
     */
+    let mut prev_time = Instant::now();
     loop {
         _ = server.process::<128>();
+        let now = Instant::now();
+        let delta = now - prev_time;
+        if delta.as_millis() > 1000 {
+            prev_time = now;
+            _ = server.broadcast(format!("Time is {:?}",now).as_bytes());
+        }
         // send data to users with fixed FPS
     }
 }

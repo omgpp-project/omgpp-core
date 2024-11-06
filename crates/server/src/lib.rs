@@ -4,9 +4,12 @@ use std::{collections::HashMap, fmt::Debug, marker::PhantomData, net::IpAddr, sy
 
 use gns::{
     GnsConnection, GnsConnectionEvent, GnsConnectionInfo, GnsGlobal, GnsNetworkMessage, GnsSocket,
-    GnsUtils, IsCreated, IsServer, ToReceive,
+    GnsUtils, IsCreated, IsServer, ToReceive, ToSend,
 };
-use gns_sys::ESteamNetworkingConnectionState;
+use gns_sys::{
+    k_nSteamNetworkingSend_Reliable, k_nSteamNetworkingSend_Unreliable, EResult,
+    ESteamNetworkingConnectionState,
+};
 use uuid::Uuid;
 
 type OnConnectRequestCallback = Box<dyn Fn(&Uuid) -> bool + Send + 'static>;
@@ -98,18 +101,26 @@ impl<'a> Server<'a> {
         socket_op_result
     }
 
-    pub fn send(&self, player: Uuid, data: &Vec<u8>) -> ServerResult<()> {
-        Ok(())
+    pub fn send(&self, player: &Uuid, data: &[u8]) -> ServerResult<()> {
+        let connection = self
+            .active_connetions
+            .get_by_left(player)
+            .ok_or_else(|| "There is not such player to send")?;
+        self.send_with_flags(connection.clone(), k_nSteamNetworkingSend_Unreliable, data)
     }
-    pub fn send_reliable(&self, player: Uuid, data: &Vec<u8>) -> ServerResult<()> {
-        Ok(())
+    pub fn send_reliable(&self, player: &Uuid, data: &[u8]) -> ServerResult<()> {
+        let connection = self
+            .active_connetions
+            .get_by_left(player)
+            .ok_or_else(|| "There is not such player to send")?;
+        self.send_with_flags(connection.clone(), k_nSteamNetworkingSend_Reliable, data)
     }
 
-    pub fn broadcast(&self, data: &Vec<u8>) -> ServerResult<()> {
-        Ok(())
+    pub fn broadcast(&self, data: &[u8]) -> ServerResult<()> {
+        self.broadcast_with_flags(k_nSteamNetworkingSend_Unreliable, data)
     }
-    pub fn broadcast_reliable(&self, data: &Vec<u8>) -> ServerResult<()> {
-        Ok(())
+    pub fn broadcast_reliable(&self, data: &[u8]) -> ServerResult<()> {
+        self.broadcast_with_flags(k_nSteamNetworkingSend_Reliable, data)
     }
 
     pub fn register_on_connect_requested(
@@ -206,6 +217,41 @@ impl<'a> Server<'a> {
         }
         Ok(())
     }
+
+    fn broadcast_with_flags(&self, flags: i32, data: &[u8]) -> ServerResult<()> {
+        let active_connections = &self.active_connetions;
+        let connections = active_connections
+            .into_iter()
+            .map(|item| item.1.clone())
+            .map(|connection| {
+                self.socket
+                    .utils()
+                    .allocate_message(connection, flags, data)
+            })
+            .collect::<Vec<GnsNetworkMessage<ToSend>>>();
+        if connections.len() > 0 {
+            let res = self.socket.send_messages(connections);
+            // TODO handle the send result
+        }
+        Ok(())
+    }
+    fn send_with_flags(
+        &self,
+        connection: GnsConnection,
+        flags: i32,
+        data: &[u8],
+    ) -> ServerResult<()> {
+        let res = self.socket.send_messages(vec![self
+            .socket
+            .utils()
+            .allocate_message(connection, flags, data)]);
+
+        if res.get(0).unwrap().is_right() {
+            return ServerResult::Err("Some error occured when sending the message".to_string());
+        }
+        Ok(())
+    }
+
     fn generate_uuid(info: &GnsConnectionInfo) -> Uuid {
         let hash_str = format!(
             "{}:{}",
