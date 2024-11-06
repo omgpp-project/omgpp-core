@@ -1,0 +1,6 @@
+syntax = "proto3";
+
+message GeneralOmgppMessage {
+    int64 type = 1;
+    bytes data = 2;
+}
