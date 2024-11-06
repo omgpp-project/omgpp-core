@@ -8,6 +8,8 @@ use std::{
 use gns::{GnsGlobal, GnsSocket, GnsUtils, IsCreated};
 use gns_sys::k_nSteamNetworkingSend_Reliable;
 use gns_sys::k_nSteamNetworkingSend_Unreliable;
+use omgpp_core::messages::general_message::GeneralOmgppMessage;
+use protobuf::Message;
 use server::Server;
 use std::env;
 fn main() {
@@ -26,10 +28,10 @@ fn main() {
 fn start_server() {
     println!("Hello! Im Server");
     let mut server = Server::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 55655).unwrap();
-    server.register_on_connect_requested(|id| true);
+    server.register_on_connect_requested(|_id| true);
     server.register_on_connection_state_changed(|id, state| println!("{:?} {:?}", id, state));
-    server.register_on_message(|id, _msg_type,data| {
-        println!("{:?} {:?}", id, data);
+    server.register_on_message(|id, msg_type,data| {
+        println!("{:?} {:?} {:?}", id, msg_type, data);
     });
 
     /*
@@ -45,13 +47,15 @@ fn start_server() {
         client->>-engine:
     */
     let mut prev_time = Instant::now();
+    let mut i : i64 = 0;
     loop {
         _ = server.process::<128>();
         let now = Instant::now();
         let delta = now - prev_time;
         if delta.as_millis() > 1000 {
             prev_time = now;
-            _ = server.broadcast(format!("Time is {:?}",now).as_bytes());
+            i+=1;
+            _ = server.broadcast(i,format!("Time is {:?}",now).as_bytes());
         }
         // send data to users with fixed FPS
     }
@@ -72,7 +76,11 @@ fn start_client() {
             client.poll_callbacks();
 
             let _actual_nb_of_messages_processed = client.poll_messages::<128>(|message| {
-                println!("{}", core::str::from_utf8(message.payload()).unwrap());
+                if let Some(general_msg) = GeneralOmgppMessage::parse_from_bytes(message.payload()).ok(){
+                    println!("Type {:?} data {:?}", general_msg.type_, core::str::from_utf8(general_msg.data.as_slice()).unwrap());
+                }else {
+                    println!("Cannot decode general message {}", core::str::from_utf8(message.payload()).unwrap());
+                }
             });
 
             let _actual_nb_of_events_processed = client.poll_event::<128>(|event| {

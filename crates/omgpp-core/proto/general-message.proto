@@ -1,7 +1,6 @@
 syntax = "proto3";
 
 message GeneralOmgppMessage {
-    int64 isbn = 1;
-    string title = 2;
-    string author = 3;
+    int64 type = 1;
+    bytes data = 2;
 }

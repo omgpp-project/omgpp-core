@@ -10,11 +10,13 @@ use gns_sys::{
     k_nSteamNetworkingSend_Reliable, k_nSteamNetworkingSend_Unreliable, EResult,
     ESteamNetworkingConnectionState,
 };
+use omgpp_core::messages::general_message::GeneralOmgppMessage;
+use protobuf::Message;
 use uuid::Uuid;
 
 type OnConnectRequestCallback = Box<dyn Fn(&Uuid) -> bool + Send + 'static>;
 type OnConnectionChangedCallback = Box<dyn Fn(&Uuid, ConnectionState) + Send + 'static>;
-type OnMessageCallback = Box<dyn Fn(&Uuid, i32, Vec<u8>) + Send + 'static>;
+type OnMessageCallback = Box<dyn Fn(&Uuid, i64, Vec<u8>) + Send + 'static>;
 
 type ServerResult<T> = Result<T, String>; // TODO replace error with enum
 
@@ -101,26 +103,40 @@ impl<'a> Server<'a> {
         socket_op_result
     }
 
-    pub fn send(&self, player: &Uuid, data: &[u8]) -> ServerResult<()> {
-        let connection = self
-            .active_connetions
-            .get_by_left(player)
-            .ok_or_else(|| "There is not such player to send")?;
-        self.send_with_flags(connection.clone(), k_nSteamNetworkingSend_Unreliable, data)
-    }
-    pub fn send_reliable(&self, player: &Uuid, data: &[u8]) -> ServerResult<()> {
-        let connection = self
-            .active_connetions
-            .get_by_left(player)
-            .ok_or_else(|| "There is not such player to send")?;
-        self.send_with_flags(connection.clone(), k_nSteamNetworkingSend_Reliable, data)
+    pub fn send(&self, player: &Uuid, msg_type: i64, data: &[u8]) -> ServerResult<()> {
+        let connection = self.get_player_connection(player)?;
+
+        let msg_bytes = Server::create_general_message(msg_type, data)
+            .or_else(|_or| Err("Cannot create general message".to_string()))?;
+        self.send_with_flags(
+            connection.clone(),
+            k_nSteamNetworkingSend_Unreliable,
+            msg_bytes.as_slice(),
+        )
     }
 
-    pub fn broadcast(&self, data: &[u8]) -> ServerResult<()> {
-        self.broadcast_with_flags(k_nSteamNetworkingSend_Unreliable, data)
+    pub fn send_reliable(&self, player: &Uuid, msg_type: i64, data: &[u8]) -> ServerResult<()> {
+        let connection = self.get_player_connection(player)?;
+        let msg_bytes = Server::create_general_message(msg_type, data)
+            .or_else(|_or| Err("Cannot create general message".to_string()))?;
+
+        self.send_with_flags(
+            connection.clone(),
+            k_nSteamNetworkingSend_Reliable,
+            msg_bytes.as_slice(),
+        )
     }
-    pub fn broadcast_reliable(&self, data: &[u8]) -> ServerResult<()> {
-        self.broadcast_with_flags(k_nSteamNetworkingSend_Reliable, data)
+
+    pub fn broadcast(&self, msg_type: i64, data: &[u8]) -> ServerResult<()> {
+        let msg_bytes = Server::create_general_message(msg_type, data)
+            .or_else(|_or| Err("Cannot create general message".to_string()))?;
+
+        self.broadcast_with_flags(k_nSteamNetworkingSend_Unreliable, msg_bytes.as_slice())
+    }
+    pub fn broadcast_reliable(&self, msg_type: i64, data: &[u8]) -> ServerResult<()> {
+        let msg_bytes = Server::create_general_message(msg_type, data)
+            .or_else(|_or| Err("Cannot create general message".to_string()))?;
+        self.broadcast_with_flags(k_nSteamNetworkingSend_Reliable, msg_bytes.as_slice())
     }
 
     pub fn register_on_connect_requested(
@@ -135,7 +151,7 @@ impl<'a> Server<'a> {
     ) {
         self.callbacks.on_connection_changed_callback = Some(Box::from(callback));
     }
-    pub fn register_on_message(&mut self, callback: impl Fn(&Uuid, i32, Vec<u8>) + 'static + Send) {
+    pub fn register_on_message(&mut self, callback: impl Fn(&Uuid, i64, Vec<u8>) + 'static + Send) {
         self.callbacks.on_message_callback = Some(Box::from(callback));
     }
 
@@ -212,8 +228,14 @@ impl<'a> Server<'a> {
             .get_by_right(&connection)
             .ok_or_else(|| "Unknown connection".to_string())?;
         // cb stands for callback
-        if let Some(cb) = &callbacks.on_message_callback {
-            cb(sender, 0, Vec::from(data));
+        match &callbacks.on_message_callback {
+            // we have callback
+            Some(cb) => match GeneralOmgppMessage::parse_from_bytes(data).ok() {
+                // we decoded message
+                Some(msg) => cb(sender, msg.type_, Vec::from(msg.data)),
+                _ => {} // todo something
+            },
+            _ => {}
         }
         Ok(())
     }
@@ -230,7 +252,7 @@ impl<'a> Server<'a> {
             })
             .collect::<Vec<GnsNetworkMessage<ToSend>>>();
         if connections.len() > 0 {
-            let res = self.socket.send_messages(connections);
+            let _res = self.socket.send_messages(connections);
             // TODO handle the send result
         }
         Ok(())
@@ -261,6 +283,21 @@ impl<'a> Server<'a> {
         let hash_digest = md5::compute(hash_str);
 
         Uuid::from_bytes(hash_digest.0)
+    }
+
+    fn create_general_message(msg_type: i64, data: &[u8]) -> protobuf::Result<Vec<u8>> {
+        let mut msg = GeneralOmgppMessage::new();
+        msg.type_ = msg_type;
+        msg.data = Vec::from(data);
+        let bytes = msg.write_to_bytes()?;
+        return Ok(bytes);
+    }
+    fn get_player_connection(&self, player: &Uuid) -> ServerResult<GnsConnection> {
+        let connection = self
+            .active_connetions
+            .get_by_left(player)
+            .ok_or_else(|| "There is not such player to send")?;
+        Ok(connection.clone())
     }
 }
 

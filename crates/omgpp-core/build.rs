@@ -1,7 +1,3 @@
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
 
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");
