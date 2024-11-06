@@ -233,7 +233,7 @@ impl<'a> Server<'a> {
             Some(cb) => match GeneralOmgppMessage::parse_from_bytes(data).ok() {
                 // we decoded message
                 Some(msg) => cb(sender, msg.type_, Vec::from(msg.data)),
-                _ => {} // todo something
+                _ => println!("Cannot decode message")
             },
             _ => {}
         }

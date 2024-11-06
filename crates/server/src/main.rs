@@ -31,7 +31,7 @@ fn start_server() {
     server.register_on_connect_requested(|_id| true);
     server.register_on_connection_state_changed(|id, state| println!("{:?} {:?}", id, state));
     server.register_on_message(|id, msg_type,data| {
-        println!("{:?} {:?} {:?}", id, msg_type, data);
+        println!("Message from: {:?} Type: {:?} Data: {:?}", id, msg_type, data);
     });
 
     /*
@@ -97,10 +97,14 @@ fn start_client() {
                     // take last messages and send
                     for msg in &msg_buf {
                         println!("Sent {}", msg);
+                        let mut general_message = GeneralOmgppMessage::new();
+                        general_message.type_ = 777;
+                        general_message.data = Vec::from(msg.as_bytes());
+
                         client.send_messages(vec![client.utils().allocate_message(
                             client.connection(),
                             k_nSteamNetworkingSend_Unreliable,
-                            msg.as_bytes(),
+                            general_message.write_to_bytes().unwrap().as_slice(),
                         )]);
                     }
                     msg_buf.clear();
