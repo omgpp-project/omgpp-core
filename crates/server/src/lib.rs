@@ -1,13 +1,13 @@
 use bimap::BiHashMap;
 use md5;
-use std::{collections::HashMap, fmt::Debug, marker::PhantomData, net::IpAddr, sync::LazyLock};
+use std::{fmt::Debug, marker::PhantomData, net::IpAddr, sync::LazyLock};
 
 use gns::{
     GnsConnection, GnsConnectionEvent, GnsConnectionInfo, GnsGlobal, GnsNetworkMessage, GnsSocket,
     GnsUtils, IsCreated, IsServer, ToReceive, ToSend,
 };
 use gns_sys::{
-    k_nSteamNetworkingSend_Reliable, k_nSteamNetworkingSend_Unreliable, EResult,
+    k_nSteamNetworkingSend_Reliable, k_nSteamNetworkingSend_Unreliable,
     ESteamNetworkingConnectionState,
 };
 use omgpp_core::messages::general_message::GeneralOmgppMessage;
@@ -80,6 +80,10 @@ impl<'a> Server<'a> {
             },
             phantom: Default::default(),
         })
+    }
+    pub fn active_connections(&self) -> Vec<Uuid> {
+        let connections = &self.active_connetions;
+        connections.into_iter().map(|item| item.0.clone()).collect()
     }
     /// Make 1 server cycle.
     /// Generic paramter N specfies maximum number of events and messages to process per a call
@@ -169,7 +173,7 @@ impl<'a> Server<'a> {
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
             ) => {
                 if let Some(cb) = &callbacks.on_connection_changed_callback{
-                    cb(&player_uuid, ConnectionState::Connecting);
+                    cb(&player_uuid, ConnectionState::Connecting);      // TODO add host and port as parameters
                 }
                 let should_accept = (callbacks.on_connect_requested_callback)(&player_uuid);
                 if should_accept {
@@ -233,7 +237,7 @@ impl<'a> Server<'a> {
             Some(cb) => match GeneralOmgppMessage::parse_from_bytes(data).ok() {
                 // we decoded message
                 Some(msg) => cb(sender, msg.type_, Vec::from(msg.data)),
-                _ => println!("Cannot decode message")
+                _ => println!("Cannot decode message"),
             },
             _ => {}
         }

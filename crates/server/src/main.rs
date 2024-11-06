@@ -25,6 +25,18 @@ fn main() {
     }
 }
 
+/*
+    sequenceDiagram
+    engine->>+client: RunFrame()
+    client->>+ server: ReceiveNetworkData
+        server ->> server:ReceiveMessagesOnPollGroup
+
+    client->>+server: RunFrame()
+        server->>server:SteamGameServer_RunCallbacks
+        server->>server:SendDataToClients(with fixed FPS)
+
+    client->>-engine:
+*/
 fn start_server() {
     println!("Hello! Im Server");
     let mut server = Server::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 55655).unwrap();
@@ -34,18 +46,6 @@ fn start_server() {
         println!("Message from: {:?} Type: {:?} Data: {:?}", id, msg_type, data);
     });
 
-    /*
-        sequenceDiagram
-        engine->>+client: RunFrame()
-        client->>+ server: ReceiveNetworkData
-            server ->> server:ReceiveMessagesOnPollGroup
-
-        client->>+server: RunFrame()
-            server->>server:SteamGameServer_RunCallbacks
-            server->>server:SendDataToClients(with fixed FPS)
-
-        client->>-engine:
-    */
     let mut prev_time = Instant::now();
     let mut i : i64 = 0;
     loop {
