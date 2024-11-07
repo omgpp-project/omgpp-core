@@ -1,7 +1,8 @@
-use bimap::BiHashMap;
+pub mod connection_tracker;
 use md5;
 use std::{fmt::Debug, marker::PhantomData, net::IpAddr, sync::LazyLock};
 
+use connection_tracker::ConnectionTracker;
 use gns::{
     GnsConnection, GnsConnectionEvent, GnsConnectionInfo, GnsGlobal, GnsNetworkMessage, GnsSocket,
     GnsUtils, IsCreated, IsServer, ToReceive, ToSend,
@@ -50,7 +51,7 @@ struct ServerCallbacks {
 pub struct Server<'a> {
     ip: IpAddr,
     port: u16,
-    active_connetions: BiHashMap<Uuid, GnsConnection>,
+    connection_tracker: ConnectionTracker,
     socket: GnsSocket<'static, 'static, IsServer>,
     callbacks: ServerCallbacks,
     phantom: PhantomData<&'a bool>,
@@ -72,7 +73,7 @@ impl<'a> Server<'a> {
             ip,
             port,
             socket: server_socket,
-            active_connetions: BiHashMap::new(),
+            connection_tracker: Default::default(),
             callbacks: ServerCallbacks {
                 on_connect_requested_callback: Box::new(|_id| true),
                 on_connection_changed_callback: None,
@@ -82,8 +83,7 @@ impl<'a> Server<'a> {
         })
     }
     pub fn active_connections(&self) -> Vec<Uuid> {
-        let connections = &self.active_connetions;
-        connections.into_iter().map(|item| item.0.clone()).collect()
+        self.connection_tracker.active_players()
     }
     /// Make 1 server cycle.
     /// Generic paramter N specfies maximum number of events and messages to process per a call
@@ -96,19 +96,22 @@ impl<'a> Server<'a> {
                 event,
                 &self.socket,
                 &self.callbacks,
-                &mut self.active_connetions,
+                &mut self.connection_tracker,
             )
         });
         let _processed_msg_count = socket.poll_messages::<N>(|msg| {
             socket_op_result =
-                Server::process_messages(msg, &self.active_connetions, &self.callbacks)
+                Server::process_messages(msg, &self.connection_tracker, &self.callbacks)
         });
 
         socket_op_result
     }
 
     pub fn send(&self, player: &Uuid, msg_type: i64, data: &[u8]) -> ServerResult<()> {
-        let connection = self.get_player_connection(player)?;
+        let connection = self
+            .connection_tracker
+            .player_connection(player)
+            .ok_or_else(|| "There is not such player to send")?;
 
         let msg_bytes = Server::create_general_message(msg_type, data)
             .or_else(|_or| Err("Cannot create general message".to_string()))?;
@@ -120,7 +123,10 @@ impl<'a> Server<'a> {
     }
 
     pub fn send_reliable(&self, player: &Uuid, msg_type: i64, data: &[u8]) -> ServerResult<()> {
-        let connection = self.get_player_connection(player)?;
+        let connection = self
+            .connection_tracker
+            .player_connection(player)
+            .ok_or_else(|| "There is not such player to send")?;
         let msg_bytes = Server::create_general_message(msg_type, data)
             .or_else(|_or| Err("Cannot create general message".to_string()))?;
 
@@ -163,7 +169,7 @@ impl<'a> Server<'a> {
         event: GnsConnectionEvent,
         socket: &GnsSocket<IsServer>,
         callbacks: &ServerCallbacks,
-        active_connetions: &mut BiHashMap<Uuid, GnsConnection>,
+        connection_tracker: &mut ConnectionTracker,
     ) -> ServerResult<()> {
         let player_uuid = Server::generate_uuid(&event.info());
         match (event.old_state(), event.info().state()) {
@@ -197,9 +203,8 @@ impl<'a> Server<'a> {
                  ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_ClosedByPeer
                 |ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_ProblemDetectedLocally,
             ) => {
-                if active_connetions.contains_left(&player_uuid){
-                    active_connetions.remove_by_left(&player_uuid);
-                }
+                connection_tracker.track_player_dicsonnected(&player_uuid);
+
                 if let Some(cb) = &callbacks.on_connection_changed_callback {
                     cb(&player_uuid, ConnectionState::Disconnected);
                 }
@@ -209,7 +214,7 @@ impl<'a> Server<'a> {
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connected,
             ) => {
-                active_connetions.insert(player_uuid.clone(),event.connection());
+                connection_tracker.track_player_connected(player_uuid.clone(),event.connection());
 
                 if let Some(cb) = &callbacks.on_connection_changed_callback {
                     cb(&player_uuid, ConnectionState::Connected);
@@ -223,13 +228,13 @@ impl<'a> Server<'a> {
 
     fn process_messages(
         event: &GnsNetworkMessage<ToReceive>,
-        tracked_connections: &BiHashMap<Uuid, GnsConnection>,
+        connection_tracker: &ConnectionTracker,
         callbacks: &ServerCallbacks,
     ) -> ServerResult<()> {
         let data = event.payload();
         let connection = event.connection();
-        let sender = tracked_connections
-            .get_by_right(&connection)
+        let sender = connection_tracker
+            .player_by_connection(&connection)
             .ok_or_else(|| "Unknown connection".to_string())?;
         // cb stands for callback
         match &callbacks.on_message_callback {
@@ -245,10 +250,9 @@ impl<'a> Server<'a> {
     }
 
     fn broadcast_with_flags(&self, flags: i32, data: &[u8]) -> ServerResult<()> {
-        let active_connections = &self.active_connetions;
-        let connections = active_connections
-            .into_iter()
-            .map(|item| item.1.clone())
+        let connections = self
+            .connection_tracker
+            .active_connections()
             .map(|connection| {
                 self.socket
                     .utils()
@@ -296,13 +300,6 @@ impl<'a> Server<'a> {
         let bytes = msg.write_to_bytes()?;
         return Ok(bytes);
     }
-    fn get_player_connection(&self, player: &Uuid) -> ServerResult<GnsConnection> {
-        let connection = self
-            .active_connetions
-            .get_by_left(player)
-            .ok_or_else(|| "There is not such player to send")?;
-        Ok(connection.clone())
-    }
 }
 
 impl<'a> Debug for Server<'a> {
@@ -310,7 +307,7 @@ impl<'a> Debug for Server<'a> {
         f.debug_struct("Server")
             .field("ip", &self.ip)
             .field("port", &self.port)
-            .field("active_connetions", &self.active_connetions)
+            .field("connection_tracker", &self.connection_tracker)
             .finish()
     }
 }
