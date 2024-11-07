@@ -1,3 +1,5 @@
+use std::net::IpAddr;
+
 use bimap::BiHashMap;
 use gns::GnsConnection;
 use uuid::Uuid;
@@ -34,6 +36,20 @@ impl ConnectionTracker {
     pub fn active_connections(&self) ->impl Iterator<Item = GnsConnection> + '_{
         let connections = &self.connections;
         connections.into_iter().map(|item| item.1.clone()).into_iter()
+    }
+    pub fn generate_endpoint_uuid(ip: IpAddr,port:u16) -> Uuid {
+        let ip = match ip {
+            IpAddr::V4(v4) => v4.to_ipv6_mapped(),
+            IpAddr::V6(v6) => v6,
+        };
 
+        let hash_str = format!(
+            "{}:{}",
+            ip.to_string(),
+            port.to_string()
+        );
+        let hash_digest = md5::compute(hash_str);
+
+        Uuid::from_bytes(hash_digest.0)
     }
 }

@@ -171,7 +171,10 @@ impl<'a> Server<'a> {
         callbacks: &ServerCallbacks,
         connection_tracker: &mut ConnectionTracker,
     ) -> ServerResult<()> {
-        let player_uuid = Server::generate_uuid(&event.info());
+        let player_uuid = ConnectionTracker::generate_endpoint_uuid(
+            IpAddr::V6(event.info().remote_address()),
+            event.info().remote_port(),
+        );
         match (event.old_state(), event.info().state()) {
             // player tries to connect
             (
@@ -280,17 +283,6 @@ impl<'a> Server<'a> {
             return ServerResult::Err("Some error occured when sending the message".to_string());
         }
         Ok(())
-    }
-
-    fn generate_uuid(info: &GnsConnectionInfo) -> Uuid {
-        let hash_str = format!(
-            "{}:{}",
-            info.remote_address().to_string(),
-            info.remote_port().to_string()
-        );
-        let hash_digest = md5::compute(hash_str);
-
-        Uuid::from_bytes(hash_digest.0)
     }
 
     fn create_general_message(msg_type: i64, data: &[u8]) -> protobuf::Result<Vec<u8>> {
