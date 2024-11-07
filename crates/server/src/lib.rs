@@ -1,10 +1,9 @@
 pub mod connection_tracker;
-use md5;
 use std::{fmt::Debug, marker::PhantomData, net::IpAddr, sync::LazyLock};
 
-use connection_tracker::ConnectionTracker;
+use connection_tracker::{ConnectionTracker, Endpoint, ToEndpoint};
 use gns::{
-    GnsConnection, GnsConnectionEvent, GnsConnectionInfo, GnsGlobal, GnsNetworkMessage, GnsSocket,
+    GnsConnection, GnsConnectionEvent, GnsGlobal, GnsNetworkMessage, GnsSocket,
     GnsUtils, IsCreated, IsServer, ToReceive, ToSend,
 };
 use gns_sys::{
@@ -15,8 +14,8 @@ use omgpp_core::messages::general_message::GeneralOmgppMessage;
 use protobuf::Message;
 use uuid::Uuid;
 
-type OnConnectRequestCallback = Box<dyn Fn(&Uuid) -> bool + Send + 'static>;
-type OnConnectionChangedCallback = Box<dyn Fn(&Uuid, ConnectionState) + Send + 'static>;
+type OnConnectRequestCallback = Box<dyn Fn(&Uuid,&Endpoint) -> bool + Send + 'static>;
+type OnConnectionChangedCallback = Box<dyn Fn(&Uuid, &Endpoint, ConnectionState) + Send + 'static>;
 type OnMessageCallback = Box<dyn Fn(&Uuid, i64, Vec<u8>) + Send + 'static>;
 
 type ServerResult<T> = Result<T, String>; // TODO replace error with enum
@@ -75,7 +74,7 @@ impl<'a> Server<'a> {
             socket: server_socket,
             connection_tracker: Default::default(),
             callbacks: ServerCallbacks {
-                on_connect_requested_callback: Box::new(|_id| true),
+                on_connect_requested_callback: Box::new(|_id,_endpoint| true),
                 on_connection_changed_callback: None,
                 on_message_callback: None,
             },
@@ -151,13 +150,13 @@ impl<'a> Server<'a> {
 
     pub fn register_on_connect_requested(
         &mut self,
-        callback: impl Fn(&Uuid) -> bool + 'static + Send,
+        callback: impl Fn(&Uuid, &Endpoint) -> bool + 'static + Send,
     ) {
         self.callbacks.on_connect_requested_callback = Box::from(callback);
     }
     pub fn register_on_connection_state_changed(
         &mut self,
-        callback: impl Fn(&Uuid, ConnectionState) + 'static + Send,
+        callback: impl Fn(&Uuid, &Endpoint,ConnectionState) + 'static + Send,
     ) {
         self.callbacks.on_connection_changed_callback = Some(Box::from(callback));
     }
@@ -171,10 +170,8 @@ impl<'a> Server<'a> {
         callbacks: &ServerCallbacks,
         connection_tracker: &mut ConnectionTracker,
     ) -> ServerResult<()> {
-        let player_uuid = ConnectionTracker::generate_endpoint_uuid(
-            IpAddr::V6(event.info().remote_address()),
-            event.info().remote_port(),
-        );
+        let endpoint = event.info().to_endpoint();
+        let player_uuid = ConnectionTracker::generate_endpoint_uuid(&endpoint);
         match (event.old_state(), event.info().state()) {
             // player tries to connect
             (
@@ -182,9 +179,9 @@ impl<'a> Server<'a> {
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
             ) => {
                 if let Some(cb) = &callbacks.on_connection_changed_callback{
-                    cb(&player_uuid, ConnectionState::Connecting);      // TODO add host and port as parameters
+                    cb(&player_uuid, &endpoint, ConnectionState::Connecting);      // TODO add host and port as parameters
                 }
-                let should_accept = (callbacks.on_connect_requested_callback)(&player_uuid);
+                let should_accept = (callbacks.on_connect_requested_callback)(&player_uuid,&endpoint);
                 if should_accept {
                     socket.accept(event.connection()).or_else(|_err| {
                         ServerResult::Err("Cannot accept the connection".to_string())
@@ -209,7 +206,7 @@ impl<'a> Server<'a> {
                 connection_tracker.track_player_dicsonnected(&player_uuid);
 
                 if let Some(cb) = &callbacks.on_connection_changed_callback {
-                    cb(&player_uuid, ConnectionState::Disconnected);
+                    cb(&player_uuid, &endpoint, ConnectionState::Disconnected);
                 }
             }
             // player connected
@@ -220,7 +217,7 @@ impl<'a> Server<'a> {
                 connection_tracker.track_player_connected(player_uuid.clone(),event.connection());
 
                 if let Some(cb) = &callbacks.on_connection_changed_callback {
-                    cb(&player_uuid, ConnectionState::Connected);
+                    cb(&player_uuid, &endpoint, ConnectionState::Connected);
                 }
             }
 

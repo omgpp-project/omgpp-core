@@ -1,8 +1,26 @@
-use std::net::IpAddr;
+use std::{f32::consts::E, net::IpAddr};
 
 use bimap::BiHashMap;
-use gns::GnsConnection;
+use gns::{GnsConnection, GnsConnectionInfo};
 use uuid::Uuid;
+
+pub trait ToEndpoint {
+    fn to_endpoint(&self) -> Endpoint;
+}
+impl ToEndpoint for GnsConnectionInfo {
+    fn to_endpoint(&self) -> Endpoint {
+        Endpoint{
+            ip: IpAddr::V6(self.remote_address()),
+            port: self.remote_port()
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Endpoint {
+    ip: IpAddr,
+    port: u16
+}
 
 #[derive(Default,Debug)]
 pub struct ConnectionTracker {
@@ -37,7 +55,10 @@ impl ConnectionTracker {
         let connections = &self.connections;
         connections.into_iter().map(|item| item.1.clone()).into_iter()
     }
-    pub fn generate_endpoint_uuid(ip: IpAddr,port:u16) -> Uuid {
+    pub fn generate_endpoint_uuid(endpoint: &Endpoint) -> Uuid{
+        ConnectionTracker::generate_uuid(endpoint.ip,endpoint.port)
+    }
+    pub fn generate_uuid(ip: IpAddr,port:u16) -> Uuid {
         let ip = match ip {
             IpAddr::V4(v4) => v4.to_ipv6_mapped(),
             IpAddr::V6(v6) => v6,
