@@ -1,12 +1,11 @@
 use std::{
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    net::{IpAddr, Ipv4Addr},
     sync::mpsc,
     thread,
     time::Instant,
 };
 
 use gns::{GnsGlobal, GnsSocket, GnsUtils, IsCreated};
-use gns_sys::k_nSteamNetworkingSend_Reliable;
 use gns_sys::k_nSteamNetworkingSend_Unreliable;
 use omgpp_core::messages::general_message::GeneralOmgppMessage;
 use protobuf::Message;
@@ -40,8 +39,8 @@ fn main() {
 fn start_server() {
     println!("Hello! Im Server");
     let mut server = Server::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 55655).unwrap();
-    server.register_on_connect_requested(|_id| true);
-    server.register_on_connection_state_changed(|id, state| println!("{:?} {:?}", id, state));
+    server.register_on_connect_requested(|_id,_endpoint| true);
+    server.register_on_connection_state_changed(|id, _endpoint, state| println!("{:?} {:?}", id, state));
     server.register_on_message(|id, msg_type,data| {
         println!("Message from: {:?} Type: {:?} Data: {:?}", id, msg_type, data);
     });

@@ -81,7 +81,7 @@ impl<'a> Server<'a> {
             phantom: Default::default(),
         })
     }
-    pub fn active_connections(&self) -> Vec<Uuid> {
+    pub fn active_players(&self) -> Vec<(Uuid,Endpoint)> {
         self.connection_tracker.active_players()
     }
     /// Make 1 server cycle.
