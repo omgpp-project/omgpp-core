@@ -44,14 +44,19 @@ impl ConnectionTracker {
             .map(|conn| conn.clone())
     }
 
-    pub fn track_player_dicsonnected(&mut self, uuid: &Uuid) {
+    pub fn track_player_disconnected(&mut self, uuid: &Uuid) {
         if self.connections.contains_left(uuid) {
             self.connections.remove_by_left(uuid);
         }
+        if self.endpoints.contains_left(uuid){
+            self.endpoints.remove_by_left(uuid);
+        }
     }
 
-    pub fn track_player_connected(&mut self, uuid: Uuid, connection: GnsConnection) {
+    pub fn track_player_connected(&mut self, uuid: Uuid, endpoint:Endpoint,connection: GnsConnection) {
         self.connections.insert(uuid, connection);
+        // TODO decide what todo when we have already associated endpoint
+        let _old_endpoint = self.endpoints.insert(uuid, endpoint);   
     }
 
     pub fn player_by_connection(&self, connection: &GnsConnection) -> Option<&Uuid> {
