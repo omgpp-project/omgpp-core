@@ -1,91 +1,27 @@
 pub mod connection_tracker;
-use std::{fmt::Debug, marker::PhantomData, net::IpAddr, sync::LazyLock};
+use std::{fmt::Debug, marker::PhantomData, net::IpAddr};
 
-use connection_tracker::{ConnectionTracker, Endpoint, ToEndpoint};
-use either::Either;
-use gns::{
-    GnsConnection, GnsConnectionEvent, GnsDroppable, GnsGlobal, GnsNetworkMessage, GnsSocket,
-    GnsUtils, IsCreated, IsReady, IsServer, ToReceive,
-};
+use connection_tracker::{ConnectionTracker};
+use gns::ToReceive;
+use gns::{GnsConnectionEvent, GnsNetworkMessage, GnsSocket, IsCreated, IsServer};
 use gns_sys::{
     k_nSteamNetworkingSend_Reliable, k_nSteamNetworkingSend_Unreliable,
     ESteamNetworkingConnectionState,
 };
-use omgpp_core::messages::general_message::GeneralOmgppMessage;
+use omgpp_core::ToEndpoint;
+use omgpp_core::{
+    messages::general_message::GeneralOmgppMessage, ConnectionState, Endpoint, TransmitterHelper,
+    GNS,
+};
 use protobuf::Message;
 use uuid::Uuid;
 
-type OnConnectRequestCallback = Box<dyn Fn(&Uuid, &Endpoint) -> bool + Send + 'static>;
-type OnConnectionChangedCallback = Box<dyn Fn(&Uuid, &Endpoint, ConnectionState) + Send + 'static>;
-type OnMessageCallback = Box<dyn Fn(&Uuid, i64, Vec<u8>) + Send + 'static>;
+type OnConnectRequestCallback = Box<dyn Fn(&Uuid, &Endpoint) -> bool + 'static>;
+type OnConnectionChangedCallback = Box<dyn Fn(&Uuid, &Endpoint, ConnectionState) + 'static>;
+type OnMessageCallback = Box<dyn Fn(&Uuid, i64, Vec<u8>) + 'static>;
 
 type ServerResult<T> = Result<T, String>; // TODO replace error with enum
 
-struct GnsWrapper {
-    global: GnsGlobal,
-    utils: GnsUtils,
-}
-unsafe impl Send for GnsWrapper {}
-unsafe impl Sync for GnsWrapper {}
-
-static GNS: LazyLock<ServerResult<GnsWrapper>> = LazyLock::new(|| {
-    Ok(GnsWrapper {
-        global: GnsGlobal::get()?,
-        utils: GnsUtils::new().ok_or("Error occurred when creating GnsUtils")?,
-    })
-});
-
-#[allow(dead_code)]
-pub struct TransmitterHelper {}
-
-impl TransmitterHelper {
-    pub fn send<T: GnsDroppable + IsReady>(
-        socket: &GnsSocket<'_, '_, T>,
-        connections: &[GnsConnection],
-        flags: i32,
-        data: &[u8],
-    ) -> Vec<Either<u64, gns_sys::EResult>> {
-        TransmitterHelper::send_with_iter(
-            socket,
-            connections.into_iter().map(|i| i.to_owned()),
-            flags,
-            data,
-        )
-    }
-    pub fn send_with_iter<T: GnsDroppable + IsReady>(
-        socket: &GnsSocket<'_, '_, T>,
-        connections: impl Iterator<Item = GnsConnection>,
-        flags: i32,
-        data: &[u8],
-    ) -> Vec<Either<u64, gns_sys::EResult>> {
-        let messages = connections
-            .map(|connection| {
-                socket
-                    .utils()
-                    .allocate_message(connection.clone(), flags, data)
-            })
-            .collect::<Vec<_>>();
-
-        match messages.len() > 0 {
-            true => socket.send_messages(messages),
-            false => vec![],
-        }
-        /*
-            if res.get(0).unwrap().is_right() {
-                return ServerResult::Err("Some error occured when sending the message".to_string());
-            }
-        */
-    }
-}
-
-#[allow(dead_code)]
-#[derive(Debug)]
-pub enum ConnectionState {
-    Disconnected = 0,
-    Disconnecting = 1,
-    Connecting = 2,
-    Connected = 3,
-}
 struct ServerCallbacks {
     on_connect_requested_callback: OnConnectRequestCallback,
     on_connection_changed_callback: Option<OnConnectionChangedCallback>,
@@ -112,7 +48,6 @@ impl<'a> Server<'a> {
         let server_socket = gns_socket
             .listen(address_to_bind, port)
             .or(ServerResult::Err("Cannot create server socket".to_string()))?;
-
         Ok(Server {
             ip,
             port,
@@ -130,7 +65,7 @@ impl<'a> Server<'a> {
     pub fn active_players(&self) -> Vec<(Uuid, Endpoint)> {
         self.connection_tracker.active_players()
     }
-    pub fn socket(&self) -> &GnsSocket<'static,'static,IsServer>{
+    pub fn socket(&self) -> &GnsSocket<'static, 'static, IsServer> {
         &self.socket
     }
     /// Make 1 server cycle.
@@ -177,17 +112,17 @@ impl<'a> Server<'a> {
 
     pub fn register_on_connect_requested(
         &mut self,
-        callback: impl Fn(&Uuid, &Endpoint) -> bool + 'static + Send,
+        callback: impl Fn(&Uuid, &Endpoint) -> bool + 'static,
     ) {
         self.callbacks.on_connect_requested_callback = Box::from(callback);
     }
     pub fn register_on_connection_state_changed(
         &mut self,
-        callback: impl Fn(&Uuid, &Endpoint, ConnectionState) + 'static + Send,
+        callback: impl Fn(&Uuid, &Endpoint, ConnectionState) + 'static,
     ) {
         self.callbacks.on_connection_changed_callback = Some(Box::from(callback));
     }
-    pub fn register_on_message(&mut self, callback: impl Fn(&Uuid, i64, Vec<u8>) + 'static + Send) {
+    pub fn register_on_message(&mut self, callback: impl Fn(&Uuid, i64, Vec<u8>) + 'static) {
         self.callbacks.on_message_callback = Some(Box::from(callback));
     }
 

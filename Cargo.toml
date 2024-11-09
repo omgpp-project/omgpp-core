@@ -1,8 +1,10 @@
 [workspace]
 resolver = "2"
-members=[ 
+members = [
     "crates/omgpp-core",
-    "crates/server"
+    "crates/server",
+    "crates/client",
+    "examples/simple_chat",
 ]
 
 [workspace.dependencies]

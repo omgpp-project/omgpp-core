@@ -1,26 +1,10 @@
 use std::net::IpAddr;
 
 use bimap::BiHashMap;
-use gns::{GnsConnection, GnsConnectionInfo};
+use gns::{GnsConnection};
+use omgpp_core::Endpoint;
 use uuid::Uuid;
 
-pub trait ToEndpoint {
-    fn to_endpoint(&self) -> Endpoint;
-}
-impl ToEndpoint for GnsConnectionInfo {
-    fn to_endpoint(&self) -> Endpoint {
-        Endpoint {
-            ip: IpAddr::V6(self.remote_address()),
-            port: self.remote_port(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct Endpoint {
-    ip: IpAddr,
-    port: u16,
-}
 
 #[derive(Default, Debug)]
 pub struct ConnectionTracker {

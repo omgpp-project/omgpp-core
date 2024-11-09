@@ -1,14 +1,14 @@
 use std::{
+    cell::Cell,
     net::{IpAddr, Ipv4Addr},
+    rc::Rc,
     sync::mpsc,
     thread,
     time::Instant,
 };
 
-use gns::{GnsGlobal, GnsSocket, GnsUtils, IsCreated};
-use gns_sys::k_nSteamNetworkingSend_Unreliable;
-use omgpp_core::messages::general_message::GeneralOmgppMessage;
-use protobuf::Message;
+use client::Client;
+use omgpp_core::ConnectionState;
 use server::Server;
 use std::env;
 fn main() {
@@ -39,22 +39,27 @@ fn main() {
 fn start_server() {
     println!("Hello! Im Server");
     let mut server = Server::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 55655).unwrap();
-    server.register_on_connect_requested(|_id,_endpoint| true);
-    server.register_on_connection_state_changed(|id, _endpoint, state| println!("{:?} {:?}", id, state));
-    server.register_on_message(|id, msg_type,data| {
-        println!("Message from: {:?} Type: {:?} Data: {:?}", id, msg_type, data);
+    server.register_on_connect_requested(|_id, _endpoint| true);
+    server.register_on_connection_state_changed(|id, _endpoint, state| {
+        println!("{:?} {:?}", id, state)
+    });
+    server.register_on_message(|id, msg_type, data| {
+        println!(
+            "Message from: {:?} Type: {:?} Data: {:?}",
+            id, msg_type, data
+        );
     });
 
     let mut prev_time = Instant::now();
-    let mut i : i64 = 0;
+    let mut i: i64 = 0;
     loop {
         _ = server.process::<128>();
         let now = Instant::now();
         let delta = now - prev_time;
         if delta.as_millis() > 1000 {
             prev_time = now;
-            i+=1;
-            _ = server.broadcast(i,format!("Time is {:?}",now).as_bytes());
+            i += 1;
+            _ = server.broadcast(i, format!("Time is {:?}", now).as_bytes());
         }
         // send data to users with fixed FPS
     }
@@ -63,32 +68,37 @@ fn start_client() {
     println!("Hello! Im a client");
     let (tx_channel, rx_channel) = mpsc::channel();
     let _client_connection_thread = thread::spawn(move || {
-        let gns_global = GnsGlobal::get().unwrap();
-        let gns_utils = GnsUtils::new().unwrap();
-
         let port: u16 = 55655;
-        let gns_socket = GnsSocket::<IsCreated>::new(&gns_global, &gns_utils).unwrap();
-        let client = gns_socket.connect(Ipv4Addr::LOCALHOST.to_ipv6_mapped(), port).unwrap();
+        let should_reconnected = Rc::from(Cell::from(false));
+        let should_reconnected_cloned = should_reconnected.clone(); // Don't know how to pass it inside a closure without cloning
+
+        let mut client = Client::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+
+        client.register_on_connection_state_changed( move |endpoint, state| {
+            println!("{:?} {:?}", endpoint, state);
+            if state == ConnectionState::Disconnected {
+                should_reconnected_cloned.set(false);
+            }
+        });
+
+        client.register_on_message(|id, msg_type, data| {
+            println!(
+                "Server says: {:?} Type: {:?} Data: {:?}",
+                id,
+                msg_type,
+                String::from_utf8(data)
+            );
+        });
+        let _connection_result = client.connect().unwrap();
+
         let mut last_update = Instant::now();
         let mut msg_buf = Vec::<String>::new();
         loop {
-            client.poll_callbacks();
-
-            let _actual_nb_of_messages_processed = client.poll_messages::<128>(|message| {
-                if let Some(general_msg) = GeneralOmgppMessage::parse_from_bytes(message.payload()).ok(){
-                    println!("Type {:?} data {:?}", general_msg.type_, core::str::from_utf8(general_msg.data.as_slice()).unwrap());
-                }else {
-                    println!("Cannot decode general message {}", core::str::from_utf8(message.payload()).unwrap());
-                }
-            });
-
-            let _actual_nb_of_events_processed = client.poll_event::<128>(|event| {
-                let conn = event.connection();
-                println!(
-                    "Connection Client {}",
-                    format!("{:?} {:?}", conn, event.info().remote_address())
-                );
-            });
+            if should_reconnected.get() == true {
+                should_reconnected.set(false);
+                client.connect().unwrap();
+            }
+            client.process::<128>().unwrap(); // triggers registered callbacks, should be called as freequently as possible
             let since_last_update = Instant::now() - last_update;
             if since_last_update.as_millis() > 2000 {
                 last_update = Instant::now();
@@ -96,15 +106,7 @@ fn start_client() {
                     // take last messages and send
                     for msg in &msg_buf {
                         println!("Sent {}", msg);
-                        let mut general_message = GeneralOmgppMessage::new();
-                        general_message.type_ = 777;
-                        general_message.data = Vec::from(msg.as_bytes());
-
-                        client.send_messages(vec![client.utils().allocate_message(
-                            client.connection(),
-                            k_nSteamNetworkingSend_Unreliable,
-                            general_message.write_to_bytes().unwrap().as_slice(),
-                        )]);
+                        _ = client.send(777, msg.as_bytes());
                     }
                     msg_buf.clear();
                 }

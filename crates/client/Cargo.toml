@@ -1,13 +1,13 @@
 [package]
-name = "omgpp-core"
+name = "client"
 version = "0.1.0"
 edition = "2021"
 
-[build-dependencies]
-protobuf-codegen = { version = "3.7.1"}
-
 [dependencies]
-protobuf = { version = "3.7.1" }
 gns = { git="https://github.com/hussein-aitlahcen/gns-rs.git",rev="a0fc575" }
 gns-sys = { git="https://github.com/hussein-aitlahcen/gns-rs.git",rev="a0fc575" }
+md5 = { version="0.7.0" }
+bimap = { version="0.6.3" }
+omgpp-core = {path = "../omgpp-core" }
+protobuf = { version = "3.7.1" }
 either = { version = "1.13.0" }
