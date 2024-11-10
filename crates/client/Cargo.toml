@@ -11,3 +11,6 @@ bimap = { version="0.6.3" }
 omgpp-core = {path = "../omgpp-core" }
 protobuf = { version = "3.7.1" }
 either = { version = "1.13.0" }
+
+[lib]
+crate-type = ["cdylib","rlib"]
