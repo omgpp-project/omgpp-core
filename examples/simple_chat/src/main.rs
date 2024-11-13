@@ -77,14 +77,14 @@ fn start_client() {
         client.register_on_connection_state_changed( move |endpoint, state| {
             println!("{:?} {:?}", endpoint, state);
             if state == ConnectionState::Disconnected {
-                should_reconnected_cloned.set(false);
+                should_reconnected_cloned.set(true);
             }
         });
 
-        client.register_on_message(|id, msg_type, data| {
+        client.register_on_message(|endpoint, msg_type, data| {
             println!(
                 "Server says: {:?} Type: {:?} Data: {:?}",
-                id,
+                endpoint,
                 msg_type,
                 String::from_utf8(data)
             );
