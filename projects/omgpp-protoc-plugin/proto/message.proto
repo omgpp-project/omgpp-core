@@ -1,0 +1,17 @@
+syntax = "proto2";
+
+option csharp_namespace="awd.awd";
+option java_package = "java.awd";
+package sample.messages;
+message Void {}
+
+message Message {
+    optional int64 type = 1;
+    optional bytes data = 2;
+}
+
+message MessageTest {
+   optional int32 field1 = 1;
+   optional string string_field = 2;
+   optional bytes bytes_field = 3;
+}
