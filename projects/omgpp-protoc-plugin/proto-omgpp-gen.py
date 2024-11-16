@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 import logging
 import sys
 import json
@@ -57,7 +57,7 @@ if __name__ == "__main__":
     debug=False
     # read from file for debug purpose
     if debug:
-        file1 = open("dev_protoc_input.txt", "rb") 
+        file1 = open(protoc_dev_input_file, "rb") 
         request = CodeGeneratorRequest.FromString(file1.read())
         file1.close()
     else:
