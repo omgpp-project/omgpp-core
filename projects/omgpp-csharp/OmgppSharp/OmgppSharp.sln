@@ -5,7 +5,9 @@ VisualStudioVersion = 17.9.34622.214
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OmgppSharpCore", "OmgppSharpCore\OmgppSharpCore.csproj", "{C5790413-6060-49DD-9A77-246DB5194EDA}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OmgppSharpExample", "OmgppSharpExample\OmgppSharpExample.csproj", "{E265180E-1584-4222-ACEA-B55DCE2B1335}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OmgppSharpExample", "OmgppSharpExample\OmgppSharpExample.csproj", "{E265180E-1584-4222-ACEA-B55DCE2B1335}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OmgppSharpServer", "OmgppSharpServer\OmgppSharpServer.csproj", "{AC363387-416E-47E8-8E9E-40DF9ABA3066}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +23,10 @@ Global
 		{E265180E-1584-4222-ACEA-B55DCE2B1335}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E265180E-1584-4222-ACEA-B55DCE2B1335}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E265180E-1584-4222-ACEA-B55DCE2B1335}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AC363387-416E-47E8-8E9E-40DF9ABA3066}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AC363387-416E-47E8-8E9E-40DF9ABA3066}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AC363387-416E-47E8-8E9E-40DF9ABA3066}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AC363387-416E-47E8-8E9E-40DF9ABA3066}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

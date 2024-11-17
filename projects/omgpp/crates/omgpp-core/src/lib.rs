@@ -4,11 +4,12 @@
 #![allow(non_camel_case_types)]
 #![allow(dead_code)]
 
+pub mod ffi;
+
 use std::{net::IpAddr, sync::LazyLock};
 
 use either::Either;
 use gns::{GnsGlobal, GnsUtils, GnsDroppable, IsReady, GnsConnection, GnsSocket, GnsConnectionInfo};
-
 
 pub mod messages{
     include!(concat!(env!("OUT_DIR"), "/proto/mod.rs"));
@@ -16,6 +17,7 @@ pub mod messages{
 
 #[allow(dead_code)]
 #[derive(Debug,Clone,Hash,PartialEq,Eq)]
+#[repr(i16)]
 pub enum ConnectionState {
     None = -1,
     Disconnected = 0,

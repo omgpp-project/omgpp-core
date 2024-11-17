@@ -27,7 +27,11 @@ impl ConnectionTracker {
             .get_by_left(player)
             .map(|conn| conn.clone())
     }
-
+    pub fn player_endpoint(&self, player: &Uuid) -> Option<&Endpoint> {
+        self.endpoints
+            .get_by_left(player)
+            .map(|conn| conn)
+    }
     pub fn track_player_disconnected(&mut self, uuid: &Uuid) {
         if self.connections.contains_left(uuid) {
             self.connections.remove_by_left(uuid);

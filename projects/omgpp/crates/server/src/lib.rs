@@ -1,7 +1,9 @@
 pub mod connection_tracker;
+pub mod ffi;
+
 use std::{fmt::Debug, marker::PhantomData, net::IpAddr};
 
-use connection_tracker::{ConnectionTracker};
+use connection_tracker::ConnectionTracker;
 use gns::ToReceive;
 use gns::{GnsConnectionEvent, GnsNetworkMessage, GnsSocket, IsCreated, IsServer};
 use gns_sys::{
@@ -18,7 +20,7 @@ use uuid::Uuid;
 
 type OnConnectRequestCallback = Box<dyn Fn(&Uuid, &Endpoint) -> bool + 'static>;
 type OnConnectionChangedCallback = Box<dyn Fn(&Uuid, &Endpoint, ConnectionState) + 'static>;
-type OnMessageCallback = Box<dyn Fn(&Uuid, i64, Vec<u8>) + 'static>;
+type OnMessageCallback = Box<dyn Fn(&Uuid, &Endpoint, i64, Vec<u8>) + 'static>;
 
 type ServerResult<T> = Result<T, String>; // TODO replace error with enum
 
@@ -122,7 +124,10 @@ impl<'a> Server<'a> {
     ) {
         self.callbacks.on_connection_changed_callback = Some(Box::from(callback));
     }
-    pub fn register_on_message(&mut self, callback: impl Fn(&Uuid, i64, Vec<u8>) + 'static) {
+    pub fn register_on_message(
+        &mut self,
+        callback: impl Fn(&Uuid, &Endpoint, i64, Vec<u8>) + 'static,
+    ) {
         self.callbacks.on_message_callback = Some(Box::from(callback));
     }
 
@@ -198,12 +203,16 @@ impl<'a> Server<'a> {
         let sender = connection_tracker
             .player_by_connection(&connection)
             .ok_or_else(|| "Unknown connection".to_string())?;
+        let endpoint = connection_tracker
+            .player_endpoint(sender)
+            .ok_or_else(|| "Unknown endpoint".to_string())?;
+
         // cb stands for callback
         match &callbacks.on_message_callback {
             // we have callback
             Some(cb) => match GeneralOmgppMessage::parse_from_bytes(data).ok() {
                 // we decoded message
-                Some(msg) => cb(sender, msg.type_, Vec::from(msg.data)),
+                Some(msg) => cb(sender, endpoint, msg.type_, Vec::from(msg.data)),
                 _ => println!("Cannot decode message"),
             },
             _ => {}

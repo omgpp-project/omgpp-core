@@ -43,7 +43,7 @@ fn start_server() {
     server.register_on_connection_state_changed(|id, _endpoint, state| {
         println!("{:?} {:?}", id, state)
     });
-    server.register_on_message(|id, msg_type, data| {
+    server.register_on_message(|id, _endpoint,msg_type, data| {
         println!(
             "Message from: {:?} Type: {:?} Data: {:?}",
             id, msg_type, data

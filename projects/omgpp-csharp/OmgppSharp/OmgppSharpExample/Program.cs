@@ -1,6 +1,7 @@
 ﻿using awd.awd;
 using Google.Protobuf;
 using OmgppSharpCore;
+using OmgppSharpServer;
 
 namespace OmgppSharpExample
 {
@@ -8,6 +9,17 @@ namespace OmgppSharpExample
     {
         static void Main(string[] args)
         {
+            var server = new Server("127.0.0.1", 55655);
+
+            var t = new Thread(() =>
+            {
+                while (true)
+                {
+                    server.Process();
+                }
+            });
+            t.Start();
+            Console.ReadLine();
             MessageHandler handler = new MessageHandler();
             handler.RegisterOnMessage<Message>((message) =>
             {
