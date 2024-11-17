@@ -12,6 +12,7 @@ fn main() {
             _ => x,
         })
         .csharp_class_name("OmgppServerNative")     
+        .csharp_class_accessibility("public")
         .csharp_namespace("OmgppNative")         
         .generate_csharp_file("../../generated/csharp/Server.g.cs")
         .unwrap();

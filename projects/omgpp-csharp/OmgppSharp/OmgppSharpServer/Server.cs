@@ -1,6 +1,11 @@
-﻿using OmgppNative;
+﻿using Google.Protobuf;
+using OmgppNative;
+using OmgppSharpCore;
+using OmgppSharpCore.Interfaces;
 using System;
 using System.Diagnostics;
+using System.Net;
+using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -12,10 +17,13 @@ namespace OmgppSharpServer
         delegate bool ConnectionRequestedCallbackDelegate(UuidFFI player, EndpointFFI endpoint);
         delegate void MessageCallbackDelegate(UuidFFI player, EndpointFFI endpoint, long messageId, byte* data, uint size);
 
+        public Func<Guid, IPAddress, ushort, bool> OnConnectionRequest;
+        public event Action<Guid, IPAddress,ushort, ConnectionState> OnConnectionStateChanged;
+        public event Action<Guid, IPAddress,ushort, long, byte[]> OnRawMessage;
 
         private IntPtr _handle;
         private bool _disposed;
-
+        private MessageHandler _messageHandler = new MessageHandler();
         public Server(string ip, ushort port)
         {
             fixed (byte* cstr = Encoding.UTF8.GetBytes(ip))
@@ -34,31 +42,44 @@ namespace OmgppSharpServer
             ptr = Marshal.GetFunctionPointerForDelegate(new MessageCallbackDelegate(OnMessage));
             OmgppServerNative.server_register_on_message(_handle.ToPointer(), (delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, long, byte*, nuint, void>)ptr);
         }
-
-        private void OnMessage(UuidFFI player, EndpointFFI endpoint, long messageId, byte* data, uint size)
-        {
-            var guid = player.bytes;
-            Span<byte> buffer = new Span<byte>(guid, 16);
-
-            var bytes = new Span<byte>(data, (int)size).ToArray();
-            Console.WriteLine($"{new Guid(buffer)} {messageId} {bytes}");
-        }
-
-        private bool OnConnectionRequested(UuidFFI player, EndpointFFI endpoint)
-        {
-            return true;
-        }
-
         public void Process()
         {
             OmgppServerNative.server_process(_handle.ToPointer());
         }
 
+        public void RegisterOnMessage<T>(Action<T> callback) where T : IOmgppMessage<T>, IMessage<T>
+        {
+            _messageHandler.RegisterOnMessage(callback);
+        }
+        private void OnMessage(UuidFFI player, EndpointFFI endpoint, long messageId, byte* data, uint size)
+        {
+            var guid = GuidFromFFI(player);
+            var ip = IpAddressFromEndpoint(endpoint);
+            var port = endpoint.port;
+            var dataSpan = new Span<byte>(data, (int)size).ToArray();
+            OnRawMessage?.Invoke(guid,ip,port,messageId,dataSpan);
+            _messageHandler.HandleRawMessage(messageId,dataSpan);
+        }
+
+        private bool OnConnectionRequested(UuidFFI player, EndpointFFI endpoint)
+        {
+            if (OnConnectionRequest == null)
+                return true;
+
+            var bytes = new Span<byte>(endpoint.ipv6_octets, 16);
+            var port = endpoint.port;
+            IPAddress address = new IPAddress(bytes);
+
+            return OnConnectionRequest.Invoke(new Guid(new Span<byte>(player.bytes, 16)), address, port);
+        }
+
+
         private void HandleOnConnectionChanged(UuidFFI player, EndpointFFI endpoint, ConnectionState state)
         {
-            var guid = player.bytes;
-            Span<byte> buffer = new Span<byte>(guid, 16);
-            Console.WriteLine($"{new Guid(buffer)} {state}");
+            var guid = GuidFromFFI(player);
+            var ip = IpAddressFromEndpoint(endpoint);
+            var port = endpoint.port;
+            OnConnectionStateChanged?.Invoke(guid,ip,port,state);
         }
 
         public void Dispose()
@@ -74,6 +95,16 @@ namespace OmgppSharpServer
         {
             if (_handle == IntPtr.Zero)
                 throw new Exception("Server handler not alive");
+        }
+
+        private IPAddress IpAddressFromEndpoint(EndpointFFI endpoint)
+        {
+            var bytes = new Span<byte>(endpoint.ipv6_octets, 16);
+            return new IPAddress(bytes);
+        }
+        private Guid GuidFromFFI(UuidFFI uuid)
+        {
+            return new Guid(new Span<byte>(uuid.bytes, 16));
         }
     }
 }

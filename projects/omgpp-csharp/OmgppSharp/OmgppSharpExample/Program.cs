@@ -1,5 +1,7 @@
-﻿using awd.awd;
+﻿using System.Net;
+using awd.awd;
 using Google.Protobuf;
+using OmgppNative;
 using OmgppSharpCore;
 using OmgppSharpServer;
 
@@ -10,7 +12,9 @@ namespace OmgppSharpExample
         static void Main(string[] args)
         {
             var server = new Server("127.0.0.1", 55655);
-
+            server.OnConnectionRequest = OnConnectionRequest;
+            server.OnConnectionStateChanged += OnConnectionStateChanged;
+            server.OnRawMessage+= OnRawMessage;
             var t = new Thread(() =>
             {
                 while (true)
@@ -51,6 +55,22 @@ namespace OmgppSharpExample
             @void.WriteTo(memoryStream);
             handler.HandleRawMessage(awd.awd.Void.MessageId, memoryStream.ToArray());
             memoryStream.SetLength(0);
+        }
+
+        private static void OnConnectionStateChanged(Guid guid, IPAddress address, ushort port, ConnectionState state)
+        {
+            Console.WriteLine($"ConnectionState changed Id {guid} {address}:{port} {state}");
+        }
+
+        private static void OnRawMessage(Guid guid, IPAddress address, ushort port, long messageId, byte[] data)
+        {
+            Console.WriteLine($"Message from Id {guid} {address}:{port} {messageId} length {data.Length}");
+        }
+
+        private static bool OnConnectionRequest(Guid guid, IPAddress address, ushort port)
+        {
+            Console.WriteLine($"Connection Request from Id {guid} {address}:{port}");
+            return true;
         }
     }
 }

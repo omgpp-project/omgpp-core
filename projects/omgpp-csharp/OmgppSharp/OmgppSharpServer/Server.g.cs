@@ -10,48 +10,48 @@ using System.Runtime.InteropServices;
 
 namespace OmgppNative
 {
-    internal static unsafe partial class OmgppServerNative
+    public static unsafe partial class OmgppServerNative
     {
         const string __DllName = "server";
 
 
 
         [DllImport(__DllName, EntryPoint = "server_create", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern void* server_create(byte* ip, ushort port);
+        public static extern void* server_create(byte* ip, ushort port);
 
         [DllImport(__DllName, EntryPoint = "server_process", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern void server_process(void* server);
+        public static extern void server_process(void* server);
 
         [DllImport(__DllName, EntryPoint = "server_register_on_connect_requested", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern void server_register_on_connect_requested(void* server, delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, bool> callback);
+        public static extern void server_register_on_connect_requested(void* server, delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, bool> callback);
 
         [DllImport(__DllName, EntryPoint = "server_register_on_connection_state_change", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern void server_register_on_connection_state_change(void* server, delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, ConnectionState, void> callback);
+        public static extern void server_register_on_connection_state_change(void* server, delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, ConnectionState, void> callback);
 
         [DllImport(__DllName, EntryPoint = "server_register_on_message", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern void server_register_on_message(void* server, delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, long, byte*, nuint, void> callback);
+        public static extern void server_register_on_message(void* server, delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, long, byte*, nuint, void> callback);
 
         [DllImport(__DllName, EntryPoint = "server_destroy", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern void server_destroy(void* server);
+        public static extern void server_destroy(void* server);
 
 
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    internal unsafe partial struct EndpointFFI
+    public unsafe partial struct EndpointFFI
     {
         public fixed byte ipv6_octets[16];
         public ushort port;
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    internal unsafe partial struct UuidFFI
+    public unsafe partial struct UuidFFI
     {
         public fixed byte bytes[16];
     }
 
 
-    internal enum ConnectionState : short
+    public enum ConnectionState : short
     {
         None = -1,
         Disconnected = 0,
