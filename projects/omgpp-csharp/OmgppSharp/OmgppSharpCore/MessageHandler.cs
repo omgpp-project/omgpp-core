@@ -10,7 +10,7 @@ namespace OmgppSharpCore
 {
     public class MessageHandler
     {
-        private Dictionary<int, Action<byte[]>> _handlers = new Dictionary<int, Action<byte[]>>();
+        private Dictionary<long, Action<byte[]>> _handlers = new Dictionary<long, Action<byte[]>>();
         public MessageHandler()
         {
 
@@ -20,7 +20,7 @@ namespace OmgppSharpCore
         {
             if (callback == null)
                 return;
-            int id = T.MessageId;
+            long id = T.MessageId;
             _handlers[id] = (data) =>
             {
                 var result = T.MessageParser.ParseFrom(data);
@@ -28,7 +28,7 @@ namespace OmgppSharpCore
             };
         }
 
-        public void HandleRawMessage(int id, byte[] data)
+        public void HandleRawMessage(long id, byte[] data)
         {
             if (_handlers.TryGetValue(id, out var handler))
             {
