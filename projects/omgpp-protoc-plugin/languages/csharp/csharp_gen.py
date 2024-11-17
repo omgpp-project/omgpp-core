@@ -57,7 +57,7 @@ def process_message(buffer:io.StringIO,message:DescriptorProto,descriptor:FileDe
     message_id = get_message_id(message,descriptor)
     buffer.write(f"public sealed partial class {csharp_name} : IOmgppMessage, IOmgppMessage<{csharp_name}> \n")
     buffer.write("{\n")
-    buffer.write(f"\tpublic static int MessageId {{get;}} = {message_id};\n")
+    buffer.write(f"\tpublic static long MessageId {{get;}} = {message_id};\n")
     buffer.write(f"\tpublic static MessageParser<{csharp_name}> MessageParser => Parser;\n")
     buffer.write("}\n")
     

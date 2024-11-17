@@ -4,7 +4,7 @@ namespace OmgppSharpCore.Interfaces
 {
     public interface IOmgppMessage
     {
-        static abstract int MessageId { get; }
+        static abstract long MessageId { get; }
     }
     public interface IOmgppMessage<T> : IOmgppMessage where T : IMessage<T>
     {
