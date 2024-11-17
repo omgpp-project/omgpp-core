@@ -49,7 +49,7 @@ pub unsafe extern "C" fn server_register_on_connect_requested(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn register_on_connection_state_change(
+pub unsafe extern "C" fn server_register_on_connection_state_change(
     server: *mut Server,
     callback: ServerOnConnectionChanged,
 ) {
@@ -62,7 +62,7 @@ pub unsafe extern "C" fn register_on_connection_state_change(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn register_on_message(
+pub unsafe extern "C" fn server_register_on_message(
     server: *mut Server,
     callback: ServerOnMessage,
 ) {
@@ -72,4 +72,15 @@ pub unsafe extern "C" fn register_on_message(
         .register_on_message(move |uuid, endpoint,message_id,data| {
             callback(uuid.to_ffi(), endpoint.to_ffi(),message_id,data.as_ptr(),data.len())
         });
+}
+
+#[no_mangle]
+pub unsafe  extern "C" fn server_destroy(server: *mut Server)
+{
+    match server.as_mut() {
+        server_ref => {
+            drop(server_ref);
+        }
+        _ => (),
+    }
 }

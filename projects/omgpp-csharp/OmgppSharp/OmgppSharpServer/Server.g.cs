@@ -25,12 +25,16 @@ namespace OmgppNative
         [DllImport(__DllName, EntryPoint = "server_register_on_connect_requested", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         internal static extern void server_register_on_connect_requested(void* server, delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, bool> callback);
 
-        [DllImport(__DllName, EntryPoint = "register_on_connection_state_change", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern void register_on_connection_state_change(void* server, delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, ConnectionState, void> callback);
+        [DllImport(__DllName, EntryPoint = "server_register_on_connection_state_change", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern void server_register_on_connection_state_change(void* server, delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, ConnectionState, void> callback);
 
-        [DllImport(__DllName, EntryPoint = "register_on_message", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern void register_on_message(void* server, delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, long, byte*, nuint, void> callback);
-      
+        [DllImport(__DllName, EntryPoint = "server_register_on_message", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern void server_register_on_message(void* server, delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, long, byte*, nuint, void> callback);
+
+        [DllImport(__DllName, EntryPoint = "server_destroy", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern void server_destroy(void* server);
+
+
     }
 
     [StructLayout(LayoutKind.Sequential)]

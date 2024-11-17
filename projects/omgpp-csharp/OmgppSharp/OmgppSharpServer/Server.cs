@@ -6,7 +6,7 @@ using System.Text;
 
 namespace OmgppSharpServer
 {
-    unsafe public class Server
+    unsafe public class Server : IDisposable
     {
         delegate void ConnectionStateChangedCallbackDelegate(UuidFFI player, EndpointFFI endpoint, ConnectionState state);
         delegate bool ConnectionRequestedCallbackDelegate(UuidFFI player, EndpointFFI endpoint);
@@ -14,6 +14,8 @@ namespace OmgppSharpServer
 
 
         private IntPtr _handle;
+        private bool _disposed;
+
         public Server(string ip, ushort port)
         {
             fixed (byte* cstr = Encoding.UTF8.GetBytes(ip))
@@ -27,10 +29,10 @@ namespace OmgppSharpServer
             OmgppServerNative.server_register_on_connect_requested(_handle.ToPointer(), (delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, bool>)ptr);
 
             ptr = Marshal.GetFunctionPointerForDelegate(new ConnectionStateChangedCallbackDelegate(HandleOnConnectionChanged));
-            OmgppServerNative.register_on_connection_state_change(_handle.ToPointer(), (delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, ConnectionState, void>)ptr);
+            OmgppServerNative.server_register_on_connection_state_change(_handle.ToPointer(), (delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, ConnectionState, void>)ptr);
 
             ptr = Marshal.GetFunctionPointerForDelegate(new MessageCallbackDelegate(OnMessage));
-            OmgppServerNative.register_on_message(_handle.ToPointer(), (delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, long, byte*, nuint, void>)ptr);
+            OmgppServerNative.server_register_on_message(_handle.ToPointer(), (delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, long, byte*, nuint, void>)ptr);
         }
 
         private void OnMessage(UuidFFI player, EndpointFFI endpoint, long messageId, byte* data, uint size)
@@ -57,6 +59,21 @@ namespace OmgppSharpServer
             var guid = player.bytes;
             Span<byte> buffer = new Span<byte>(guid, 16);
             Console.WriteLine($"{new Guid(buffer)} {state}");
+        }
+
+        public void Dispose()
+        {
+            if (!_disposed)
+            {
+                OmgppServerNative.server_destroy(_handle.ToPointer());
+                _handle = IntPtr.Zero;
+                _disposed = true;
+            }
+        }
+        private void EnsureAlive()
+        {
+            if (_handle == IntPtr.Zero)
+                throw new Exception("Server handler not alive");
         }
     }
 }
