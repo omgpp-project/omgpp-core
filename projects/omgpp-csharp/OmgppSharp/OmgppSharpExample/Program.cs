@@ -57,17 +57,17 @@ namespace OmgppSharpExample
             memoryStream.SetLength(0);
         }
 
-        private static void OnConnectionStateChanged(Guid guid, IPAddress address, ushort port, ConnectionState state)
+        private static void OnConnectionStateChanged(Server server,Guid guid, IPAddress address, ushort port, ConnectionState state)
         {
             Console.WriteLine($"ConnectionState changed Id {guid} {address}:{port} {state}");
         }
 
-        private static void OnRawMessage(Guid guid, IPAddress address, ushort port, long messageId, byte[] data)
+        private static void OnRawMessage(Server server,Guid guid, IPAddress address, ushort port, long messageId, byte[] data)
         {
             Console.WriteLine($"Message from Id {guid} {address}:{port} {messageId} length {data.Length}");
         }
 
-        private static bool OnConnectionRequest(Guid guid, IPAddress address, ushort port)
+        private static bool OnConnectionRequest(Server server,Guid guid, IPAddress address, ushort port)
         {
             Console.WriteLine($"Connection Request from Id {guid} {address}:{port}");
             return true;

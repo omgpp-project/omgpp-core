@@ -17,9 +17,9 @@ namespace OmgppSharpServer
         delegate bool ConnectionRequestedCallbackDelegate(UuidFFI player, EndpointFFI endpoint);
         delegate void MessageCallbackDelegate(UuidFFI player, EndpointFFI endpoint, long messageId, byte* data, uint size);
 
-        public Func<Guid, IPAddress, ushort, bool> OnConnectionRequest;
-        public event Action<Guid, IPAddress,ushort, ConnectionState> OnConnectionStateChanged;
-        public event Action<Guid, IPAddress,ushort, long, byte[]> OnRawMessage;
+        public Func<Server,Guid, IPAddress, ushort, bool> OnConnectionRequest;
+        public event Action<Server,Guid, IPAddress,ushort, ConnectionState> OnConnectionStateChanged;
+        public event Action<Server,Guid, IPAddress,ushort, long, byte[]> OnRawMessage;
 
         private IntPtr _handle;
         private bool _disposed;
@@ -57,7 +57,7 @@ namespace OmgppSharpServer
             var ip = IpAddressFromEndpoint(endpoint);
             var port = endpoint.port;
             var dataSpan = new Span<byte>(data, (int)size).ToArray();
-            OnRawMessage?.Invoke(guid,ip,port,messageId,dataSpan);
+            OnRawMessage?.Invoke(this,guid,ip,port,messageId,dataSpan);
             _messageHandler.HandleRawMessage(messageId,dataSpan);
         }
 
@@ -70,7 +70,7 @@ namespace OmgppSharpServer
             var port = endpoint.port;
             IPAddress address = new IPAddress(bytes);
 
-            return OnConnectionRequest.Invoke(new Guid(new Span<byte>(player.bytes, 16)), address, port);
+            return OnConnectionRequest.Invoke(this,new Guid(new Span<byte>(player.bytes, 16)), address, port);
         }
 
 
@@ -79,7 +79,7 @@ namespace OmgppSharpServer
             var guid = GuidFromFFI(player);
             var ip = IpAddressFromEndpoint(endpoint);
             var port = endpoint.port;
-            OnConnectionStateChanged?.Invoke(guid,ip,port,state);
+            OnConnectionStateChanged?.Invoke(this, guid,ip,port,state);
         }
 
         public void Dispose()
