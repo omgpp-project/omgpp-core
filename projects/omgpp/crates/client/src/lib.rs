@@ -1,7 +1,9 @@
+mod ffi;
+
 use std::net::IpAddr;
 
 use gns::{GnsSocket, IsClient, IsCreated};
-use gns_sys::{k_nSteamNetworkingSend_Unreliable, ESteamNetworkingConnectionState};
+use gns_sys::{k_nSteamNetworkingSend_Reliable, k_nSteamNetworkingSend_Unreliable, ESteamNetworkingConnectionState};
 use omgpp_core::{
     messages::general_message::GeneralOmgppMessage, ConnectionState, Endpoint, ToEndpoint,
     TransmitterHelper, GNS,
@@ -55,10 +57,7 @@ impl Client {
     ) {
         self.callbacks.on_connection_changed_callback = Some(Box::from(callback));
     }
-    pub fn register_on_message(
-        &mut self,
-        callback: impl Fn(&Endpoint, i64, Vec<u8>) + 'static,
-    ) {
+    pub fn register_on_message(&mut self, callback: impl Fn(&Endpoint, i64, Vec<u8>) + 'static) {
         self.callbacks.on_message_callback = Some(Box::from(callback));
     }
     pub fn connect(&mut self) -> ClientResult<()> {
@@ -111,6 +110,13 @@ impl Client {
     }
 
     pub fn send(&self, msg_type: i64, data: &[u8]) -> ClientResult<()> {
+        self.send_with_flags(k_nSteamNetworkingSend_Unreliable, msg_type, data)
+    }
+    pub fn send_reliable(&self, msg_type: i64, data: &[u8]) -> ClientResult<()> {
+        self.send_with_flags(k_nSteamNetworkingSend_Reliable, msg_type, data)
+    }
+    
+    fn send_with_flags(&self, flags: i32, msg_type: i64, data: &[u8]) -> ClientResult<()> {
         if let Some(socket) = &self.socket {
             let mut general_message = GeneralOmgppMessage::new();
             general_message.type_ = msg_type;
@@ -124,13 +130,12 @@ impl Client {
             let _send_results = TransmitterHelper::send(
                 socket,
                 &[socket.connection()],
-                k_nSteamNetworkingSend_Unreliable,
+                flags,
                 &msg_bytes,
             );
         }
         Ok(())
     }
-
     fn process_connection_events(
         event: gns::GnsConnectionEvent,
         callbacks: &ClientCallbacks,

@@ -14,3 +14,6 @@ either = { version = "1.13.0" }
 
 [lib]
 crate-type = ["cdylib","rlib"]
+
+[build-dependencies]
+csbindgen = "1.8.0"
