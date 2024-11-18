@@ -6,7 +6,7 @@ fn main(){
 
     .csharp_dll_name("server")
     .csharp_type_rename(move |x| match x.as_str() {     // optional, default: `|x| x`
-        "Server" => "void".into(),
+        "Client" => "void".into(),
         _ => x,
     })
     .csharp_class_name("OmgppClientNative")     
