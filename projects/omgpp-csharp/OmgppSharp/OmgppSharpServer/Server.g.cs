@@ -31,6 +31,21 @@ namespace OmgppNative
         [DllImport(__DllName, EntryPoint = "server_register_on_message", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern void server_register_on_message(void* server, delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, long, byte*, nuint, void> callback);
 
+        [DllImport(__DllName, EntryPoint = "server_send", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern void server_send(void* server, UuidFFI* uuid, long msg_type, byte* data, nuint size);
+
+        [DllImport(__DllName, EntryPoint = "server_send_reliable", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern void server_send_reliable(void* server, UuidFFI* uuid, long msg_type, byte* data, nuint size);
+
+        [DllImport(__DllName, EntryPoint = "server_broadcast", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern void server_broadcast(void* server, long msg_type, byte* data, nuint size);
+
+        [DllImport(__DllName, EntryPoint = "server_broadcast_reliable", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern void server_broadcast_reliable(void* server, long msg_type, byte* data, nuint size);
+
+        [DllImport(__DllName, EntryPoint = "server_disconnect", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern void server_disconnect(void* server, UuidFFI* uuid);
+
         [DllImport(__DllName, EntryPoint = "server_destroy", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern void server_destroy(void* server);
 

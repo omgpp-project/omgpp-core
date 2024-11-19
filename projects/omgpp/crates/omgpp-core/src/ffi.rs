@@ -26,11 +26,11 @@ impl ToFfi<UuidFFI> for Uuid {
 
 #[repr(C, packed)]
 pub struct EndpointFFI {
-    ipv6_octets: [u8;16],
-    port:u16
+    pub ipv6_octets: [u8;16],
+    pub port:u16
 }
 
 #[repr(C,packed)]
 pub struct UuidFFI {
-    bytes:[u8;16]
+    pub bytes:[u8;16]
 }

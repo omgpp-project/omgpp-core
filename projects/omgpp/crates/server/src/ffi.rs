@@ -1,17 +1,20 @@
-
-use omgpp_core::{ffi::{EndpointFFI, ToFfi, UuidFFI}, ConnectionState};
 use crate::Server;
+use omgpp_core::{
+    ffi::{EndpointFFI, ToFfi, UuidFFI},
+    ConnectionState,
+};
 use std::{
     ffi::{c_char, c_uchar, CStr},
     net::IpAddr,
     ptr::null_mut,
     str::FromStr,
 };
+use uuid::Uuid;
 
 // FFI
 type ServerOnConnectRequested = extern "C" fn(UuidFFI, EndpointFFI) -> bool;
 type ServerOnConnectionChanged = extern "C" fn(UuidFFI, EndpointFFI, ConnectionState);
-type ServerOnMessage = extern "C" fn(UuidFFI, EndpointFFI, i64, *const c_uchar,usize);
+type ServerOnMessage = extern "C" fn(UuidFFI, EndpointFFI, i64, *const c_uchar, usize);
 
 #[no_mangle]
 pub unsafe extern "C" fn server_create(ip: *const c_char, port: u16) -> *mut Server<'static> {
@@ -19,7 +22,7 @@ pub unsafe extern "C" fn server_create(ip: *const c_char, port: u16) -> *mut Ser
     if c_string.is_err() {
         return null_mut();
     }
-    
+
     if let Some(addres) = IpAddr::from_str(c_string.unwrap()).ok() {
         let server_res = Server::new(addres, port);
         match server_res {
@@ -56,8 +59,8 @@ pub unsafe extern "C" fn server_register_on_connection_state_change(
     server
         .as_mut()
         .unwrap()
-        .register_on_connection_state_changed(move |uuid, endpoint,state| {
-            callback(uuid.to_ffi(), endpoint.to_ffi(),state)
+        .register_on_connection_state_changed(move |uuid, endpoint, state| {
+            callback(uuid.to_ffi(), endpoint.to_ffi(), state)
         });
 }
 
@@ -69,18 +72,90 @@ pub unsafe extern "C" fn server_register_on_message(
     server
         .as_mut()
         .unwrap()
-        .register_on_message(move |uuid, endpoint,message_id,data| {
-            callback(uuid.to_ffi(), endpoint.to_ffi(),message_id,data.as_ptr(),data.len())
+        .register_on_message(move |uuid, endpoint, message_id, data| {
+            callback(
+                uuid.to_ffi(),
+                endpoint.to_ffi(),
+                message_id,
+                data.as_ptr(),
+                data.len(),
+            )
         });
 }
 
 #[no_mangle]
-pub unsafe  extern "C" fn server_destroy(server: *mut Server)
-{
+pub unsafe extern "C" fn server_send(
+    server: *mut Server,
+    uuid: *const UuidFFI,
+    msg_type: i64,
+    data: *const c_uchar,
+    size: usize,
+) {
+    let msg_data = core::slice::from_raw_parts(data, size);
+    let client_uuid = uuid_from_ffi_ptr(uuid);
+    _ = server
+        .as_ref()
+        .unwrap()
+        .send(&client_uuid, msg_type, msg_data)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn server_send_reliable(
+    server: *mut Server,
+    uuid: *const UuidFFI,
+    msg_type: i64,
+    data: *const c_uchar,
+    size: usize,
+) {
+    let msg_data = core::slice::from_raw_parts(data, size);
+    let client_uuid = uuid_from_ffi_ptr(uuid);
+    _ = server
+        .as_ref()
+        .unwrap()
+        .send_reliable(&client_uuid, msg_type, msg_data)
+}
+#[no_mangle]
+pub unsafe extern "C" fn server_broadcast(
+    server: *mut Server,
+    msg_type: i64,
+    data: *const c_uchar,
+    size: usize,
+) {
+    let msg_data = core::slice::from_raw_parts(data, size);
+    _ = server.as_ref().unwrap().broadcast(msg_type, msg_data)
+}
+#[no_mangle]
+pub unsafe extern "C" fn server_broadcast_reliable(
+    server: *mut Server,
+    msg_type: i64,
+    data: *const c_uchar,
+    size: usize,
+) {
+    let msg_data = core::slice::from_raw_parts(data, size);
+    _ = server
+        .as_ref()
+        .unwrap()
+        .broadcast_reliable(msg_type, msg_data)
+}
+
+#[no_mangle]
+pub  unsafe extern "C" fn server_disconnect(server: *mut Server, uuid: *const UuidFFI){
+    let client_uuid = uuid_from_ffi_ptr(uuid);
+
+    panic!("server disconnect not implemented")
+    // TODO uncomment when disconnect implemented
+    // server.as_ref().unwrap().disconnect(); 
+}
+#[no_mangle]
+pub unsafe extern "C" fn server_destroy(server: *mut Server) {
     match server.as_mut() {
         server_ref => {
             drop(server_ref);
         }
         _ => (),
     }
+}
+
+unsafe fn uuid_from_ffi_ptr(uuid_ffi: *const UuidFFI) -> Uuid {
+    Uuid::from_bytes(uuid_ffi.as_ref().unwrap().bytes)
 }
