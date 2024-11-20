@@ -1,9 +1,6 @@
 fn main(){
     csbindgen::Builder::default()
     .input_extern_file("src/ffi.rs")
-    .input_extern_file("../omgpp-core/src/ffi.rs")
-    .input_extern_file("../omgpp-core/src/lib.rs")
-
     .csharp_dll_name("server")
     .csharp_type_rename(move |x| match x.as_str() {     // optional, default: `|x| x`
         "Client" => "void".into(),

@@ -1,4 +1,3 @@
-
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");
     println!("cargo::rerun-if-changed=proto/general-message.proto");
@@ -18,4 +17,14 @@ fn main() {
         // Specify output directory relative to Cargo output directory.
         .cargo_out_dir("proto")
         .run_from_script();
+
+    csbindgen::Builder::default()
+        .input_extern_file("src/ffi.rs")
+        .input_extern_file("src/lib.rs")
+        .always_included_types(["EndpointFFI", "UuidFFI","ConnectionState"])
+        .csharp_class_name("OmgppCoreNative")
+        .csharp_class_accessibility("public")
+        .csharp_namespace("OmgppNative")
+        .generate_csharp_file("../../generated/csharp/Core.g.cs")
+        .unwrap();
 }
