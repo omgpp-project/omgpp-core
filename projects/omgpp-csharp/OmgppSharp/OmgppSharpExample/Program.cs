@@ -1,14 +1,15 @@
 ﻿using System.Net;
+using System.Text;
 using awd.awd;
 using Google.Protobuf;
 using OmgppNative;
 using OmgppSharpCore;
 using OmgppSharpServer;
-
 namespace OmgppSharpExample
 {
     internal class Program
     {
+        static Guid LastClient = Guid.Empty;
         static void Main(string[] args)
         {
             var server = new Server("127.0.0.1", 55655);
@@ -22,39 +23,25 @@ namespace OmgppSharpExample
                     server.Process();
                 }
             });
+
             t.Start();
-            Console.ReadLine();
-            MessageHandler handler = new MessageHandler();
-            handler.RegisterOnMessage<Message>((message) =>
+            bool end = false;   
+            while (!end)
             {
-                Console.WriteLine(message);
-            });
-            handler.RegisterOnMessage<awd.awd.Void>((@void) =>
-            {
-                Console.WriteLine(@void);
-            });
-            handler.RegisterOnMessage<awd.awd.MessageTest>((test) =>
-            {
-                Console.WriteLine(test);
-            });
-
-
-            var messageData = new Message { Type = 123, Data = ByteString.CopyFrom(1, 2, 3, 4, 5) };
-            var testData = new MessageTest { Field1 = 0, StringField = "Some string", BytesField = ByteString.CopyFrom(0, 0, 0, 0, 0, 0) };
-            var @void = new awd.awd.Void();
-            var memoryStream = new MemoryStream();
-
-            messageData.WriteTo(memoryStream);
-            handler.HandleRawMessage(Message.MessageId, memoryStream.ToArray());
-            memoryStream.SetLength(0);
-
-            testData.WriteTo(memoryStream);
-            handler.HandleRawMessage(MessageTest.MessageId, memoryStream.ToArray());
-            memoryStream.SetLength(0);
-
-            @void.WriteTo(memoryStream);
-            handler.HandleRawMessage(awd.awd.Void.MessageId, memoryStream.ToArray());
-            memoryStream.SetLength(0);
+                var str = Console.ReadLine();
+                end = str == "end";
+                if (end || str == null)
+                    continue;
+                var msgParams = str.Split(" ");
+                bool isBroadcast = msgParams[0] == "b";
+                if (isBroadcast)
+                {
+                    server.Broadcast(888, Encoding.UTF8.GetBytes(str));
+                }else
+                {
+                    server.Send(LastClient, 888, Encoding.UTF8.GetBytes(str));
+                }
+            }
         }
 
         private static void OnConnectionStateChanged(Server server,Guid guid, IPAddress address, ushort port, ConnectionState state)
@@ -69,6 +56,7 @@ namespace OmgppSharpExample
 
         private static bool OnConnectionRequest(Server server,Guid guid, IPAddress address, ushort port)
         {
+            LastClient = guid;
             Console.WriteLine($"Connection Request from Id {guid} {address}:{port}");
             return true;
         }

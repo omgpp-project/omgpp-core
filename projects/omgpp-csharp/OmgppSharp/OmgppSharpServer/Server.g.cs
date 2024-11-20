@@ -52,28 +52,6 @@ namespace OmgppNative
 
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    public unsafe partial struct EndpointFFI
-    {
-        public fixed byte ipv6_octets[16];
-        public ushort port;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public unsafe partial struct UuidFFI
-    {
-        public fixed byte bytes[16];
-    }
-
-
-    public enum ConnectionState : short
-    {
-        None = -1,
-        Disconnected = 0,
-        Disconnecting = 1,
-        Connecting = 2,
-        Connected = 3,
-    }
 
 
 }

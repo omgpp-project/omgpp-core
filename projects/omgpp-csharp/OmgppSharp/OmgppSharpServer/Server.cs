@@ -17,9 +17,9 @@ namespace OmgppSharpServer
         delegate bool ConnectionRequestedCallbackDelegate(UuidFFI player, EndpointFFI endpoint);
         delegate void MessageCallbackDelegate(UuidFFI player, EndpointFFI endpoint, long messageId, byte* data, uint size);
 
-        public Func<Server,Guid, IPAddress, ushort, bool> OnConnectionRequest;
-        public event Action<Server,Guid, IPAddress,ushort, ConnectionState> OnConnectionStateChanged;
-        public event Action<Server,Guid, IPAddress,ushort, long, byte[]> OnRawMessage;
+        public Func<Server, Guid, IPAddress, ushort, bool> OnConnectionRequest;
+        public event Action<Server, Guid, IPAddress, ushort, ConnectionState> OnConnectionStateChanged;
+        public event Action<Server, Guid, IPAddress, ushort, long, byte[]> OnRawMessage;
 
         private IntPtr _handle;
         private bool _disposed;
@@ -39,7 +39,7 @@ namespace OmgppSharpServer
             ptr = Marshal.GetFunctionPointerForDelegate(new ConnectionStateChangedCallbackDelegate(HandleOnConnectionChanged));
             OmgppServerNative.server_register_on_connection_state_change(_handle.ToPointer(), (delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, ConnectionState, void>)ptr);
 
-            ptr = Marshal.GetFunctionPointerForDelegate(new MessageCallbackDelegate(OnMessage));
+            ptr = Marshal.GetFunctionPointerForDelegate(new MessageCallbackDelegate(OnMessageNative));
             OmgppServerNative.server_register_on_message(_handle.ToPointer(), (delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, long, byte*, nuint, void>)ptr);
         }
         public void Process()
@@ -51,14 +51,48 @@ namespace OmgppSharpServer
         {
             _messageHandler.RegisterOnMessage(callback);
         }
-        private void OnMessage(UuidFFI player, EndpointFFI endpoint, long messageId, byte* data, uint size)
+
+        public void Send(Guid client, long messageId, byte[] data)
+        {
+            fixed (byte* dataPtr = data)
+            {
+                var uuidFFi = FfiFromGuid(client);
+                OmgppServerNative.server_send(_handle.ToPointer(), &uuidFFi, messageId, dataPtr, (nuint)data.Length);
+            }
+
+        }
+
+
+        public void SendReliable(Guid client, long messageId, byte[] data)
+        {
+            fixed (byte* dataPtr = data)
+            {
+                var uuidFFi = FfiFromGuid(client);
+                OmgppServerNative.server_send_reliable(_handle.ToPointer(), &uuidFFi, messageId, dataPtr, (nuint)data.Length);
+            }
+        }
+        public void Broadcast(long messageId, byte[] data)
+        {
+            fixed (byte* dataPtr = data)
+            {
+                OmgppServerNative.server_broadcast(_handle.ToPointer(), messageId, dataPtr, (nuint)data.Length);
+            }
+        }
+        public void BroadcastReliable(long messageId, byte[] data)
+        {
+            fixed (byte* dataPtr = data)
+            {
+                OmgppServerNative.server_broadcast_reliable(_handle.ToPointer(), messageId, dataPtr, (nuint)data.Length);
+            }
+        }
+        private void OnMessageNative(UuidFFI player, EndpointFFI endpoint, long messageId, byte* data, uint size)
         {
             var guid = GuidFromFFI(player);
             var ip = IpAddressFromEndpoint(endpoint);
             var port = endpoint.port;
             var dataSpan = new Span<byte>(data, (int)size).ToArray();
-            OnRawMessage?.Invoke(this,guid,ip,port,messageId,dataSpan);
-            _messageHandler.HandleRawMessage(messageId,dataSpan);
+            OnRawMessage?.Invoke(this, guid, ip, port, messageId, dataSpan);
+            _messageHandler.HandleRawMessage(messageId, dataSpan);
         }
 
         private bool OnConnectionRequested(UuidFFI player, EndpointFFI endpoint)
@@ -70,7 +104,7 @@ namespace OmgppSharpServer
             var port = endpoint.port;
             IPAddress address = new IPAddress(bytes);
 
-            return OnConnectionRequest.Invoke(this,new Guid(new Span<byte>(player.bytes, 16)), address, port);
+            return OnConnectionRequest.Invoke(this, new Guid(new Span<byte>(player.bytes, 16)), address, port);
         }
 
 
@@ -79,7 +113,7 @@ namespace OmgppSharpServer
             var guid = GuidFromFFI(player);
             var ip = IpAddressFromEndpoint(endpoint);
             var port = endpoint.port;
-            OnConnectionStateChanged?.Invoke(this, guid,ip,port,state);
+            OnConnectionStateChanged?.Invoke(this, guid, ip, port, state);
         }
 
         public void Dispose()
@@ -105,6 +139,14 @@ namespace OmgppSharpServer
         private Guid GuidFromFFI(UuidFFI uuid)
         {
             return new Guid(new Span<byte>(uuid.bytes, 16));
+        }
+
+        private static UuidFFI FfiFromGuid(Guid client)
+        {
+            UuidFFI uuidFFi = new UuidFFI();
+            var span = new Span<byte>(uuidFFi.bytes, 16);
+            client.TryWriteBytes(span);
+            return uuidFFi;
         }
     }
 }
