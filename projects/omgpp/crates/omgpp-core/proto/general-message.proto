@@ -1,6 +1,19 @@
 syntax = "proto3";
 
 message GeneralOmgppMessage {
-    int64 type = 1;
-    bytes data = 2;
+    message Message{
+        int64 type = 1;
+        bytes data = 2;
+    }
+    message RpcCall{
+        bool reliable = 3;
+        int64 method_id = 4;
+        uint64 request_id =5;
+        int64 arg_type = 6;
+        bytes arg_data = 7;
+    }
+    oneof data{
+        Message message = 8;
+        RpcCall rpc = 9;
+    }
 }
