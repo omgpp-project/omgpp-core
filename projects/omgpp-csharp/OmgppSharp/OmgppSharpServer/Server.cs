@@ -8,18 +8,26 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Text;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace OmgppSharpServer
 {
     unsafe public class Server : IDisposable
     {
-        delegate void ConnectionStateChangedCallbackDelegate(UuidFFI player, EndpointFFI endpoint, ConnectionState state);
-        delegate bool ConnectionRequestedCallbackDelegate(UuidFFI player, EndpointFFI endpoint);
-        delegate void MessageCallbackDelegate(UuidFFI player, EndpointFFI endpoint, long messageId, byte* data, uint size);
+        delegate void ConnectionStateChangedNativeDelegate(UuidFFI player, EndpointFFI endpoint, ConnectionState state);
+        delegate bool ConnectionRequestedNativeDelegate(UuidFFI player, EndpointFFI endpoint);
+        delegate void RawMessageNativeDelegate(UuidFFI player, EndpointFFI endpoint, long messageId, byte* data, uint size);
+        delegate void RpcCallNativeDelegate(UuidFFI player, EndpointFFI endpoint, bool reliable, long methodId, ulong requestId, long argType, byte* argData, uint size);
 
-        public Func<Server, Guid, IPAddress, ushort, bool> OnConnectionRequest;
-        public event Action<Server, Guid, IPAddress, ushort, ConnectionState> OnConnectionStateChanged;
-        public event Action<Server, Guid, IPAddress, ushort, long, byte[]> OnRawMessage;
+        public delegate bool ConnectionRequestDelegate(Server server, Guid clientGuid, IPAddress ip, ushort port);
+        public delegate void ConnectionStateChangedDelegate(Server server, Guid clientGuid, IPAddress ip, ushort port, ConnectionState state);
+        public delegate void RawMessageDelegate(Server server, Guid clientGuid, IPAddress ip, ushort port, long messageId, byte[] messageData);
+        public delegate void RpcCallDelegate(Server server, Guid clientGuid, IPAddress ip, ushort port, bool isReliable, long methodId, ulong requestId, long argType, byte[]? argData);
+
+        public ConnectionRequestDelegate OnConnectionRequest;
+        public event ConnectionStateChangedDelegate OnConnectionStateChanged;
+        public event RawMessageDelegate OnRawMessage;
+        public event RpcCallDelegate OnRpcCall;
 
         private IntPtr _handle;
         private bool _disposed;
@@ -33,15 +41,21 @@ namespace OmgppSharpServer
                     throw new Exception("Cannot create a server");
             }
 
-            var ptr = Marshal.GetFunctionPointerForDelegate(new ConnectionRequestedCallbackDelegate(OnConnectionRequested));
+            var ptr = Marshal.GetFunctionPointerForDelegate(new ConnectionRequestedNativeDelegate(OnConnectionRequested));
             OmgppServerNative.server_register_on_connect_requested(_handle.ToPointer(), (delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, bool>)ptr);
 
-            ptr = Marshal.GetFunctionPointerForDelegate(new ConnectionStateChangedCallbackDelegate(HandleOnConnectionChanged));
+            ptr = Marshal.GetFunctionPointerForDelegate(new ConnectionStateChangedNativeDelegate(HandleOnConnectionChanged));
             OmgppServerNative.server_register_on_connection_state_change(_handle.ToPointer(), (delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, ConnectionState, void>)ptr);
 
-            ptr = Marshal.GetFunctionPointerForDelegate(new MessageCallbackDelegate(OnMessageNative));
+            ptr = Marshal.GetFunctionPointerForDelegate(new RawMessageNativeDelegate(OnMessageNative));
             OmgppServerNative.server_register_on_message(_handle.ToPointer(), (delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, long, byte*, nuint, void>)ptr);
+
+            ptr = Marshal.GetFunctionPointerForDelegate(new RpcCallNativeDelegate(OnRcpCallNative));
+            OmgppServerNative.server_register_on_rpc(_handle.ToPointer(), (delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, bool, long, ulong, long, byte*, nuint, void>)ptr);
         }
+
+
+
         public void Process()
         {
             OmgppServerNative.server_process(_handle.ToPointer());
@@ -85,6 +99,21 @@ namespace OmgppSharpServer
                 OmgppServerNative.server_broadcast_reliable(_handle.ToPointer(), messageId, dataPtr, (nuint)data.Length);
             }
         }
+        public void CallRpc(Guid client, long methodId, ulong requestId, long argType, byte[]? argData, bool reliable)
+        {
+            fixed (byte* argDataPtr = argData)
+            {
+                var uuidFFi = FfiFromGuid(client);
+                OmgppServerNative.server_call_rpc(_handle.ToPointer(), &uuidFFi, reliable, methodId, requestId, argType, argDataPtr, (nuint)(argData?.Length ?? 0));
+            }
+        }
+        public void CallRpcBroadcast(long methodId, ulong requestId, long argType, byte[]? argData, bool reliable)
+        {
+            fixed (byte* argDataPtr = argData)
+            {
+                OmgppServerNative.server_call_rpc_broadcast(_handle.ToPointer(), reliable, methodId, requestId, argType, argDataPtr, (nuint)(argData?.Length ?? 0));
+            }
+        }
         private void OnMessageNative(UuidFFI player, EndpointFFI endpoint, long messageId, byte* data, uint size)
         {
             var guid = GuidFromFFI(player);
@@ -93,6 +122,14 @@ namespace OmgppSharpServer
             var dataSpan = new Span<byte>(data, (int)size).ToArray();
             OnRawMessage?.Invoke(this, guid, ip, port, messageId, dataSpan);
             _messageHandler.HandleRawMessage(messageId, dataSpan);
+        }
+        private void OnRcpCallNative(UuidFFI player, EndpointFFI endpoint, bool reliable, long methodId, ulong requestId, long argType, byte* argData, uint argDataSize)
+        {
+            var guid = GuidFromFFI(player);
+            var ip = IpAddressFromEndpoint(endpoint);
+            var port = endpoint.port;
+            var data = argDataSize == 0 ? null : new Span<byte>(argData, (int)argDataSize).ToArray();
+            OnRpcCall?.Invoke(this, guid, ip, port, reliable, methodId, requestId, argType, data);
         }
 
         private bool OnConnectionRequested(UuidFFI player, EndpointFFI endpoint)

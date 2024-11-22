@@ -2,16 +2,25 @@
 using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace OmgppSharpClient
 {
     unsafe public class Client : IDisposable
     {
-        delegate void ConnectionStateChangedCallbackDelegate(EndpointFFI endpoint, ConnectionState state);
-        delegate void MessageCallbackDelegate(EndpointFFI endpoint, long messageId, byte* data, uint size);
+        private delegate void ConnectionStateChangedNativeDelegate(EndpointFFI endpoint, ConnectionState state);
+        private delegate void RawMessageNativeDelegate(EndpointFFI endpoint, long messageId, byte* data, uint size);
+        private delegate void RpcCallNativeDelegate(EndpointFFI endpoint, bool reliable, long methodId, ulong requestId, long argType, byte* argData, uint size);
 
-        public event Action<Client,IPAddress,ushort, long, byte[]> OnRawMessage;
-        public event Action<Client,IPAddress,ushort, ConnectionState> OnConnectionStateChanged;
+
+        public delegate void RawMessageDelegate(Client client, IPAddress remoteIp, ushort remotePort, long messageId, byte[] messageData);
+        public delegate void ConnectionStateChangedDelegate(Client client, IPAddress remoteIp, ushort remotePort, ConnectionState state);
+        public delegate void RpcCallDelegate(Client client, IPAddress remoteIp, ushort remotePort, bool isReliable, long methodId, ulong requestId, long argType, byte[]? argData);
+
+
+        public event RawMessageDelegate OnRawMessage;
+        public event ConnectionStateChangedDelegate OnConnectionStateChanged;
+        public event RpcCallDelegate OnRpcCall;
 
         public ConnectionState State { get; private set; } = ConnectionState.None;
 
@@ -26,12 +35,17 @@ namespace OmgppSharpClient
                 if (_handle == IntPtr.Zero)
                     throw new Exception("Cannot create a client");
             }
-            var ptr = Marshal.GetFunctionPointerForDelegate(new ConnectionStateChangedCallbackDelegate(HandleOnConnectionChateChangedNative));
+            var ptr = Marshal.GetFunctionPointerForDelegate(new ConnectionStateChangedNativeDelegate(HandleOnConnectionChateChangedNative));
             OmgppClientNative.client_register_on_connection_state_change(_handle.ToPointer(), (delegate* unmanaged[Cdecl]<EndpointFFI, ConnectionState, void>)ptr);
 
-            ptr = Marshal.GetFunctionPointerForDelegate(new MessageCallbackDelegate(HandleOnMessageNative));
+            ptr = Marshal.GetFunctionPointerForDelegate(new RawMessageNativeDelegate(HandleOnMessageNative));
             OmgppClientNative.client_register_on_message(_handle.ToPointer(), (delegate* unmanaged[Cdecl]<EndpointFFI, long, byte*, nuint, void>)ptr);
+
+            ptr = Marshal.GetFunctionPointerForDelegate(new RpcCallNativeDelegate(HandleOnRpcCallNative));
+            OmgppClientNative.client_register_on_rpc(_handle.ToPointer(), (delegate* unmanaged[Cdecl]<EndpointFFI, bool, long, ulong, long, byte*, nuint, void>)ptr);
         }
+
+   
 
         public void Connect()
         {
@@ -74,8 +88,16 @@ namespace OmgppSharpClient
             var msgBytes =new Span<byte>(data, (int)size).ToArray();
             OnRawMessage?.Invoke(this, ip, port, messageId, msgBytes);
         }
+        private void HandleOnRpcCallNative(EndpointFFI endpoint, bool reliable, long methodId, ulong requestId, long argType, byte* argData, uint argDataSize)
+        {
+            if (OnRpcCall == null)
+                return;
 
-
+            var ip = IpAddressFromEndpoint(endpoint);
+            var port = endpoint.port;
+            var data = argDataSize == 0 ? null : new Span<byte>(argData, (int)argDataSize).ToArray();
+            OnRpcCall?.Invoke(this, ip, port, reliable,methodId,requestId,argType, data);
+        }
         public void Dispose()
         {
             if (_disposed)

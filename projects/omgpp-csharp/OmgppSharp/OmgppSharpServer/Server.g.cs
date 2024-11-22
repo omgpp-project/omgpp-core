@@ -31,6 +31,9 @@ namespace OmgppNative
         [DllImport(__DllName, EntryPoint = "server_register_on_message", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern void server_register_on_message(void* server, delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, long, byte*, nuint, void> callback);
 
+        [DllImport(__DllName, EntryPoint = "server_register_on_rpc", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern void server_register_on_rpc(void* server, delegate* unmanaged[Cdecl]<UuidFFI, EndpointFFI, bool, long, ulong, long, byte*, nuint, void> callback);
+
         [DllImport(__DllName, EntryPoint = "server_send", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern void server_send(void* server, UuidFFI* uuid, long msg_type, byte* data, nuint size);
 
@@ -42,6 +45,12 @@ namespace OmgppNative
 
         [DllImport(__DllName, EntryPoint = "server_broadcast_reliable", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern void server_broadcast_reliable(void* server, long msg_type, byte* data, nuint size);
+
+        [DllImport(__DllName, EntryPoint = "server_call_rpc", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern void server_call_rpc(void* server, UuidFFI* client, [MarshalAs(UnmanagedType.U1)] bool reliable, long method_id, ulong request_id, long arg_type, byte* arg_data, nuint arg_data_size);
+
+        [DllImport(__DllName, EntryPoint = "server_call_rpc_broadcast", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern void server_call_rpc_broadcast(void* server, [MarshalAs(UnmanagedType.U1)] bool reliable, long method_id, ulong request_id, long arg_type, byte* arg_data, nuint arg_data_size);
 
         [DllImport(__DllName, EntryPoint = "server_disconnect", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern void server_disconnect(void* server, UuidFFI* uuid);
