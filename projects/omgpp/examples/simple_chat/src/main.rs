@@ -43,7 +43,7 @@ fn start_server() {
     server.register_on_connection_state_changed(|id, _endpoint, state| {
         println!("{:?} {:?}", id, state)
     });
-    server.register_on_message(|id, _endpoint,msg_type, data| {
+    server.register_on_message(|id, _endpoint, msg_type, data| {
         println!(
             "Message from: {:?} Type: {:?} Data: {:?}",
             id, msg_type, data
@@ -74,7 +74,7 @@ fn start_client() {
 
         let mut client = Client::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
 
-        client.register_on_connection_state_changed( move |endpoint, state| {
+        client.register_on_connection_state_changed(move |endpoint, state| {
             println!("{:?} {:?}", endpoint, state);
             if state == ConnectionState::Disconnected {
                 should_reconnected_cloned.set(true);
@@ -89,7 +89,21 @@ fn start_client() {
                 String::from_utf8(data)
             );
         });
+        client.register_on_rpc(|endpoint, reliable, method_id, request_id, arg_type, data: Vec<u8>|{
+            println!(
+                "Rpc call {:?} reliable: {:?} method: {:?} request: {:?} arg: {:?} data_size: {:?} data_cap: {:?} data: {:?}",
+                endpoint,
+                reliable,
+                method_id,
+                request_id,
+                arg_type,
+                data.len(),
+                data.capacity(),
+                String::from_utf8(data)
+            ); 
+        });
         let _connection_result = client.connect().unwrap();
+        let mut sent_count = 0;
 
         let mut last_update = Instant::now();
         let mut msg_buf = Vec::<String>::new();
@@ -106,7 +120,23 @@ fn start_client() {
                     // take last messages and send
                     for msg in &msg_buf {
                         println!("Sent {}", msg);
-                        _ = client.send(777, msg.as_bytes());
+                        let data_to_send = if sent_count % 4 == 0 {
+                            Some(msg.as_bytes())
+                        } else {
+                            None
+                        };
+                        if sent_count % 2 == 0 {
+                            _ = client.call_rpc(
+                                true,
+                                sent_count,
+                                (sent_count + 1000) as u64,
+                                777,
+                                data_to_send,
+                            );
+                        } else {
+                            _ = client.send(777, msg.as_bytes());
+                        }
+                        sent_count += 1;
                     }
                     msg_buf.clear();
                 }

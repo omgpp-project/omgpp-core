@@ -15,6 +15,7 @@ use uuid::Uuid;
 type ServerOnConnectRequested = extern "C" fn(UuidFFI, EndpointFFI) -> bool;
 type ServerOnConnectionChanged = extern "C" fn(UuidFFI, EndpointFFI, ConnectionState);
 type ServerOnMessage = extern "C" fn(UuidFFI, EndpointFFI, i64, *const c_uchar, usize);
+type ServerOnRpc = extern "C" fn(UuidFFI, EndpointFFI,bool, i64, u64, i64, *const c_uchar,usize);
 
 #[no_mangle]
 pub unsafe extern "C" fn server_create(ip: *const c_char, port: u16) -> *mut Server<'static> {
@@ -82,7 +83,27 @@ pub unsafe extern "C" fn server_register_on_message(
             )
         });
 }
-
+#[no_mangle]
+pub unsafe extern "C" fn server_register_on_rpc(
+    server: *mut Server,
+    callback: ServerOnRpc,
+) {
+    server
+        .as_mut()
+        .unwrap()
+        .register_on_rpc(move |uuid, endpoint, reliable, method_id, request_id, arg_type, arg_data| {
+            callback(
+                uuid.to_ffi(),
+                endpoint.to_ffi(),
+                reliable,
+                method_id,
+                request_id,
+                arg_type,
+                arg_data.as_ptr(),
+                arg_data.len(),
+            )
+        });
+}
 #[no_mangle]
 pub unsafe extern "C" fn server_send(
     server: *mut Server,
@@ -137,16 +158,63 @@ pub unsafe extern "C" fn server_broadcast_reliable(
         .unwrap()
         .broadcast_reliable(msg_type, msg_data)
 }
-
 #[no_mangle]
-pub  unsafe extern "C" fn server_disconnect(server: *mut Server, uuid: *const UuidFFI){
+pub unsafe extern "C" fn server_call_rpc(
+    server: *mut Server,
+    client: *const UuidFFI,
+    reliable: bool,
+    method_id: i64,
+    request_id: u64,
+    arg_type: i64,
+    arg_data: *const c_uchar,
+    arg_data_size: usize,
+) {
+    let client_uuid = uuid_from_ffi_ptr(client);
+    let msg_data = match arg_data_size {
+        0 => None,
+        _ => Some(core::slice::from_raw_parts(arg_data, arg_data_size)),
+    };
+    _ = server.as_ref().unwrap().call_rpc(
+        &client_uuid,
+        reliable,
+        method_id,
+        request_id,
+        arg_type,
+        msg_data,
+    );
+}
+#[no_mangle]
+pub unsafe extern "C" fn server_call_rpc_broadcast(
+    server: *mut Server,
+    reliable: bool,
+    method_id: i64,
+    request_id: u64,
+    arg_type: i64,
+    arg_data: *const c_uchar,
+    arg_data_size: usize,
+) {
+    let msg_data = match arg_data_size {
+        0 => None,
+        _ => Some(core::slice::from_raw_parts(arg_data, arg_data_size)),
+    };
+    _ = server.as_ref().unwrap().call_rpc_broadcast(
+        reliable,
+        method_id,
+        request_id,
+        arg_type,
+        msg_data,
+    );
+}
+#[no_mangle]
+pub unsafe extern "C" fn server_disconnect(server: *mut Server, uuid: *const UuidFFI) {
     let client_uuid = uuid_from_ffi_ptr(uuid);
 
     panic!("server disconnect not implemented")
     // TODO uncomment when disconnect implemented
-    // server.as_ref().unwrap().disconnect(); 
+    // server.as_ref().unwrap().disconnect();
 }
 #[no_mangle]
+#[allow(unreachable_patterns)]
 pub unsafe extern "C" fn server_destroy(server: *mut Server) {
     match server.as_mut() {
         server_ref => {

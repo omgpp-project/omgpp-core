@@ -10,6 +10,7 @@ use std::{
 // FFI
 type ClientOnConnectionChanged = extern "C" fn(EndpointFFI, ConnectionState);
 type ClientOnMessage = extern "C" fn(EndpointFFI, i64, *const c_uchar,usize);
+type ClientOnRpc = extern "C" fn(EndpointFFI,bool, i64, u64, i64, *const c_uchar,usize);
 
 #[no_mangle]
 pub unsafe extern "C" fn client_create(ip: *const c_char, port: u16) -> *mut Client {
@@ -66,6 +67,26 @@ pub unsafe extern "C" fn client_register_on_message(
         });
 }
 #[no_mangle]
+pub unsafe extern "C" fn client_register_on_rpc(
+    client: *mut Client,
+    callback: ClientOnRpc,
+) {
+    client
+        .as_mut()
+        .unwrap()
+        .register_on_rpc(move |endpoint, reliable, method_id, request_id, arg_type, arg_data| {
+            callback(
+                endpoint.to_ffi(),
+                reliable,
+                method_id,
+                request_id,
+                arg_type,
+                arg_data.as_ptr(),
+                arg_data.len(),
+            )
+        });
+}
+#[no_mangle]
 pub unsafe extern "C" fn client_send(client: *mut Client,msg_type:i64,data:*const c_uchar,size:usize){
     let msg_data = core::slice::from_raw_parts(data, size);
     _ = client.as_mut().unwrap().send(msg_type, msg_data)
@@ -75,8 +96,31 @@ pub unsafe extern "C" fn client_send_reliable(client: *mut Client,msg_type:i64,d
     let msg_data = core::slice::from_raw_parts(data, size);
     _ = client.as_mut().unwrap().send_reliable(msg_type, msg_data)
 }
+#[no_mangle]
+pub unsafe extern "C" fn client_call_rpc(
+    client: *mut Client,
+    reliable: bool,
+    method_id: i64,
+    request_id: u64,
+    arg_type: i64,
+    arg_data: *const c_uchar,
+    arg_data_size: usize,
+) {
+    let msg_data = match arg_data_size {
+        0 => None,
+        _ => Some(core::slice::from_raw_parts(arg_data, arg_data_size)),
+    };
+    _ = client.as_ref().unwrap().call_rpc(
+        reliable,
+        method_id,
+        request_id,
+        arg_type,
+        msg_data,
+    );
+}
 
 #[no_mangle]
+#[allow(unreachable_patterns)]
 pub unsafe  extern "C" fn client_destroy(client: *mut Client)
 {
     match client.as_mut() {
