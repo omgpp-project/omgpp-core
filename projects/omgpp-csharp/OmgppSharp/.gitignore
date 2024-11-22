@@ -6,7 +6,7 @@
 .nuspec/
 .buildtasks/
 templatesTest/
-
+*.so
 # User-specific files
 *.rsuser
 *.suo
