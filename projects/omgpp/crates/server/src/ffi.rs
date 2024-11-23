@@ -46,7 +46,7 @@ pub unsafe extern "C" fn server_register_on_connect_requested(
     server
         .as_mut()
         .unwrap()
-        .register_on_connect_requested(move |uuid, endpoint| {
+        .register_on_connect_requested(move |_server,uuid, endpoint| {
             callback(uuid.to_ffi(), endpoint.to_ffi())
         });
 }
@@ -59,7 +59,7 @@ pub unsafe extern "C" fn server_register_on_connection_state_change(
     server
         .as_mut()
         .unwrap()
-        .register_on_connection_state_changed(move |uuid, endpoint, state| {
+        .register_on_connection_state_changed(move |_server, uuid, endpoint, state| {
             callback(uuid.to_ffi(), endpoint.to_ffi(), state)
         });
 }
@@ -72,7 +72,7 @@ pub unsafe extern "C" fn server_register_on_message(
     server
         .as_mut()
         .unwrap()
-        .register_on_message(move |uuid, endpoint, message_id, data| {
+        .register_on_message(move |_server,uuid, endpoint, message_id, data| {
             callback(
                 uuid.to_ffi(),
                 endpoint.to_ffi(),
@@ -139,7 +139,7 @@ pub unsafe extern "C" fn server_broadcast_reliable(
 }
 
 #[no_mangle]
-pub  unsafe extern "C" fn server_disconnect(server: *mut Server, uuid: *const UuidFFI){
+pub  unsafe extern "C" fn server_disconnect(_server: *mut Server, uuid: *const UuidFFI){
     let client_uuid = uuid_from_ffi_ptr(uuid);
 
     panic!("server disconnect not implemented")
