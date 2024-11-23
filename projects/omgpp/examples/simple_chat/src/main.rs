@@ -1,10 +1,5 @@
 use std::{
-    cell::Cell,
-    net::{IpAddr, Ipv4Addr},
-    rc::Rc,
-    sync::mpsc,
-    thread,
-    time::Instant,
+    cell::Cell, io::Read, net::{IpAddr, Ipv4Addr}, rc::Rc, sync::mpsc, thread, time::Instant
 };
 
 use client::Client;
@@ -39,12 +34,16 @@ fn main() {
 fn start_server() {
     println!("Hello! Im Server");
     let mut server = Server::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 55655).unwrap();
-    server.register_on_connect_requested(|_id, _endpoint| true);
-    server.register_on_connection_state_changed(|id, _endpoint, state| {
-        println!("{:?} {:?}", id, state)
+    server.register_on_connect_requested(|_server,_id, _endpoint| true);
+    server.register_on_connection_state_changed(|server,id, endpoint, state| {
+        let msg= format!("User {:?} {:?}",endpoint,state);
+        let status  = server.broadcast(0,msg.as_bytes());
+
+        println!("{:?} {:?} {:?} {:?}", id, state,msg, status)
     });
-    server.register_on_message(|id, _endpoint,msg_type, data| {
-        println!(
+    server.register_on_message(|ser,id, _endpoint,msg_type, data| {
+        _ =ser.broadcast(msg_type,data.as_slice());
+     println!(
             "Message from: {:?} Type: {:?} Data: {:?}",
             id, msg_type, data
         );
@@ -59,7 +58,7 @@ fn start_server() {
         if delta.as_millis() > 1000 {
             prev_time = now;
             i += 1;
-            _ = server.broadcast(i, format!("Time is {:?}", now).as_bytes());
+            //_ = server.broadcast(i, format!("Time is {:?}", now).as_bytes());
         }
         // send data to users with fixed FPS
     }
