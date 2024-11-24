@@ -1,7 +1,7 @@
 fn main(){
     csbindgen::Builder::default()
     .input_extern_file("src/ffi.rs")
-    .csharp_dll_name("server")
+    .csharp_dll_name("client")
     .csharp_type_rename(move |x| match x.as_str() {     // optional, default: `|x| x`
         "Client" => "void".into(),
         _ => x,
