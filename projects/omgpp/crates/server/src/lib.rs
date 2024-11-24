@@ -1,6 +1,7 @@
 pub mod connection_tracker;
 pub mod ffi;
 
+use std::cell::{RefCell, RefMut};
 use std::{fmt::Debug, marker::PhantomData, net::IpAddr};
 
 use connection_tracker::ConnectionTracker;
@@ -19,10 +20,10 @@ use omgpp_core::{
 use protobuf::Message;
 use uuid::Uuid;
 
-type OnConnectRequestCallback = Box<dyn Fn(&Uuid, &Endpoint) -> bool + 'static>;
-type OnConnectionChangedCallback = Box<dyn Fn(&Uuid, &Endpoint, ConnectionState) + 'static>;
-type OnMessageCallback = Box<dyn Fn(&Uuid, &Endpoint, i64, Vec<u8>) + 'static>;
-type OnRpcCallback = Box<dyn Fn(&Uuid, &Endpoint, bool, i64, u64, i64, Vec<u8>) + 'static>;
+type OnConnectRequestCallback = Box<dyn Fn(&Server, &Uuid, &Endpoint) -> bool + 'static>;
+type OnConnectionChangedCallback = Box<dyn Fn(&Server, &Uuid, &Endpoint, ConnectionState) + 'static>;
+type OnMessageCallback = Box<dyn Fn(&Server, &Uuid, &Endpoint, i64, Vec<u8>) + 'static>;
+type OnRpcCallback = Box<dyn Fn(&Server,&Uuid, &Endpoint, bool, i64, u64, i64, Vec<u8>) + 'static>;
 
 type ServerResult<T> = Result<T, String>; // TODO replace error with enum
 
@@ -32,13 +33,12 @@ struct ServerCallbacks {
     on_message_callback: Option<OnMessageCallback>,
     on_rpc_callback: Option<OnRpcCallback>,
 }
-
 pub struct Server<'a> {
     ip: IpAddr,
     port: u16,
-    connection_tracker: ConnectionTracker,
+    connection_tracker: RefCell<ConnectionTracker>,
     socket: GnsSocket<'static, 'static, IsServer>,
-    callbacks: ServerCallbacks,
+    callbacks: RefCell<ServerCallbacks>,
     phantom: PhantomData<&'a bool>,
 }
 
@@ -58,44 +58,50 @@ impl<'a> Server<'a> {
             port,
             socket: server_socket,
             connection_tracker: Default::default(),
-            callbacks: ServerCallbacks {
-                on_connect_requested_callback: Box::new(|_id, _endpoint| true),
+            callbacks: RefCell::new(ServerCallbacks {
+                on_connect_requested_callback: Box::new(|_server, _id, _endpoint| true),
                 on_connection_changed_callback: None,
                 on_message_callback: None,
                 on_rpc_callback: None,
-            },
+            }),
             phantom: Default::default(),
         })
     }
     // TODO Maybe it worth to return a Iterator instead of cloning
     pub fn active_players(&self) -> Vec<(Uuid, Endpoint)> {
-        self.connection_tracker.active_players()
+        self.connection_tracker.borrow().active_players()
     }
     pub fn socket(&self) -> &GnsSocket<'static, 'static, IsServer> {
         &self.socket
     }
     /// Make 1 server cycle.
     /// Generic paramter N specfies maximum number of events and messages to process per a call
-    pub fn process<const N: usize>(&mut self) -> ServerResult<()> {
+    pub fn process<const N: usize>(&self) -> ServerResult<()> {
         let socket = &self.socket;
         socket.poll_callbacks();
         let mut socket_op_result = ServerResult::Ok(());
         let _processed_event_count = socket.poll_event::<N>(|event| {
             socket_op_result = Server::process_connection_events(
+                self,
                 event,
                 &self.socket,
-                &self.callbacks,
-                &mut self.connection_tracker,
+                &self.callbacks.borrow(),
+                &self.connection_tracker,
             )
         });
+
         let _processed_msg_count = socket.poll_messages::<N>(|msg| {
-            socket_op_result =
-                Server::process_messages(msg, &self.connection_tracker, &self.callbacks)
+            socket_op_result = Server::process_messages(
+                self,
+                msg,
+                &self.connection_tracker.borrow(),
+                &self.callbacks.borrow(),
+            )
         });
 
         socket_op_result
     }
-
+    pub fn socket_poll_messages(&mut self, socket: &GnsNetworkMessage<ToReceive>) {}
     pub fn send(&self, player: &Uuid, msg_type: i64, data: &[u8]) -> ServerResult<()> {
         self.send_with_flags(player, msg_type, data, k_nSteamNetworkingSend_Unreliable)
     }
@@ -126,6 +132,7 @@ impl<'a> Server<'a> {
     ) -> ServerResult<()> {
         let connection = self
             .connection_tracker
+            .borrow()
             .player_connection(client)
             .ok_or_else(|| "There is not such player to send")?;
 
@@ -157,39 +164,41 @@ impl<'a> Server<'a> {
             true => k_nSteamNetworkingSend_Reliable,
             false => k_nSteamNetworkingSend_Unreliable,
         };
-        let connections = self.connection_tracker.active_connections();
+        let tracker = self.connection_tracker.borrow();
+        let connections = tracker.active_connections();
         let _res = TransmitterHelper::send_with_iter(&self.socket, connections, flags, &msg_bytes);
         Ok(())
     }
     pub fn register_on_connect_requested(
-        &mut self,
-        callback: impl Fn(&Uuid, &Endpoint) -> bool + 'static,
+        &self,
+        callback: impl Fn(&Server,&Uuid, &Endpoint) -> bool + 'static,
     ) {
-        self.callbacks.on_connect_requested_callback = Box::from(callback);
+        self.callbacks.borrow_mut().on_connect_requested_callback = Box::from(callback);
     }
     pub fn register_on_connection_state_changed(
-        &mut self,
-        callback: impl Fn(&Uuid, &Endpoint, ConnectionState) + 'static,
+        &self,
+        callback: impl Fn(&Server,&Uuid, &Endpoint, ConnectionState) + 'static,
     ) {
-        self.callbacks.on_connection_changed_callback = Some(Box::from(callback));
+        self.callbacks.borrow_mut().on_connection_changed_callback = Some(Box::from(callback));
     }
     pub fn register_on_message(
-        &mut self,
-        callback: impl Fn(&Uuid, &Endpoint, i64, Vec<u8>) + 'static,
+        &self,
+        callback: impl Fn(&Server, &Uuid, &Endpoint, i64, Vec<u8>) + 'static,
     ) {
-        self.callbacks.on_message_callback = Some(Box::from(callback));
+        self.callbacks.borrow_mut().on_message_callback = Some(Box::from(callback));
     }
     pub fn register_on_rpc(
         &mut self,
-        callback: impl Fn(&Uuid, &Endpoint, bool, i64, u64, i64, Vec<u8>) + 'static,
+        callback: impl Fn(&Server,&Uuid, &Endpoint, bool, i64, u64, i64, Vec<u8>) + 'static,
     ) {
-        self.callbacks.on_rpc_callback = Some(Box::from(callback));
+        self.callbacks.borrow_mut().on_rpc_callback = Some(Box::from(callback));
     }
     fn process_connection_events(
+        &self,
         event: GnsConnectionEvent,
         socket: &GnsSocket<IsServer>,
         callbacks: &ServerCallbacks,
-        connection_tracker: &mut ConnectionTracker,
+        connection_tracker: &RefCell<ConnectionTracker>,
     ) -> ServerResult<()> {
         let endpoint = event.info().to_endpoint();
         let player_uuid = ConnectionTracker::generate_endpoint_uuid(&endpoint);
@@ -200,9 +209,9 @@ impl<'a> Server<'a> {
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
             ) => {
                 if let Some(cb) = &callbacks.on_connection_changed_callback{
-                    cb(&player_uuid, &endpoint, ConnectionState::Connecting);      // TODO add host and port as parameters
+                    cb(self,&player_uuid, &endpoint, ConnectionState::Connecting);      // TODO add host and port as parameters
                 }
-                let should_accept = (callbacks.on_connect_requested_callback)(&player_uuid,&endpoint);
+                let should_accept = (callbacks.on_connect_requested_callback)(self,&player_uuid,&endpoint);
                 if should_accept {
                     socket.accept(event.connection()).or_else(|_err| {
                         ServerResult::Err("Cannot accept the connection".to_string())
@@ -224,10 +233,10 @@ impl<'a> Server<'a> {
                  ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_ClosedByPeer
                 |ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_ProblemDetectedLocally,
             ) => {
-                connection_tracker.track_player_disconnected(&player_uuid);
+                connection_tracker.borrow_mut().track_player_disconnected(&player_uuid);
 
                 if let Some(cb) = &callbacks.on_connection_changed_callback {
-                    cb(&player_uuid, &endpoint, ConnectionState::Disconnected);
+                    cb(self,&player_uuid, &endpoint, ConnectionState::Disconnected);
                 }
             }
             // player connected
@@ -235,10 +244,10 @@ impl<'a> Server<'a> {
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connected,
             ) => {
-                connection_tracker.track_player_connected(player_uuid.clone(),endpoint, event.connection());
+                connection_tracker.borrow_mut().track_player_connected(player_uuid.clone(),endpoint, event.connection());
 
                 if let Some(cb) = &callbacks.on_connection_changed_callback {
-                    cb(&player_uuid, &endpoint, ConnectionState::Connected);
+                    cb(self,&player_uuid, &endpoint, ConnectionState::Connected);
                 }
             }
 
@@ -248,6 +257,7 @@ impl<'a> Server<'a> {
     }
 
     fn process_messages(
+        &self,
         event: &GnsNetworkMessage<ToReceive>,
         connection_tracker: &ConnectionTracker,
         callbacks: &ServerCallbacks,
@@ -267,12 +277,13 @@ impl<'a> Server<'a> {
                 Some(Data::Message(message)) => {
                     // cb stands for callback
                     if let Some(cb) = &callbacks.on_message_callback {
-                        cb(sender, endpoint, message.type_, message.data)
+                        cb(self,sender, endpoint, message.type_, message.data)
                     }
                 }
                 Some(Data::Rpc(rpc_call)) => {
                     if let Some(rpc_callback) = &callbacks.on_rpc_callback {
                         rpc_callback(
+                            self,
                             sender,
                             endpoint,
                             rpc_call.reliable,
@@ -300,6 +311,7 @@ impl<'a> Server<'a> {
     ) -> ServerResult<()> {
         let connection = self
             .connection_tracker
+            .borrow()
             .player_connection(player)
             .ok_or_else(|| "There is not such player to send")?;
 
@@ -312,7 +324,8 @@ impl<'a> Server<'a> {
         Ok(())
     }
     fn broadcast_with_flags(&self, flags: i32, data: &[u8]) -> ServerResult<()> {
-        let connections = self.connection_tracker.active_connections();
+        let tracker = self.connection_tracker.borrow();
+        let connections = tracker.active_connections();
         let _res = TransmitterHelper::send_with_iter(&self.socket, connections, flags, data);
         Ok(())
     }
