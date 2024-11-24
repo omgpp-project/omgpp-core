@@ -45,7 +45,7 @@ namespace OmgppSharpClient
             OmgppClientNative.client_register_on_rpc(_handle.ToPointer(), (delegate* unmanaged[Cdecl]<EndpointFFI, bool, long, ulong, long, byte*, nuint, void>)ptr);
         }
 
-   
+
 
         public void Connect()
         {
@@ -70,6 +70,13 @@ namespace OmgppSharpClient
                 OmgppClientNative.client_send_reliable(_handle.ToPointer(), messageId, dataPtr, (nuint)data.Length);
             }
         }
+        public void CallRpc(long methodId, ulong requestId, long argType, byte[]? argData, bool reliable)
+        {
+            fixed (byte* argDataPtr = argData)
+            {
+                OmgppClientNative.client_call_rpc(_handle.ToPointer(), reliable, methodId, requestId, argType, argDataPtr, (nuint)(argData?.Length ?? 0));
+            }
+        }
         public void Process()
         {
             OmgppClientNative.client_process(_handle.ToPointer());
@@ -79,13 +86,13 @@ namespace OmgppSharpClient
             State = state;
             var ip = IpAddressFromEndpoint(endpoint);
             var port = endpoint.port;
-            OnConnectionStateChanged?.Invoke(this,ip, port, State);
+            OnConnectionStateChanged?.Invoke(this, ip, port, State);
         }
         private void HandleOnMessageNative(EndpointFFI endpoint, long messageId, byte* data, uint size)
         {
             var ip = IpAddressFromEndpoint(endpoint);
             var port = endpoint.port;
-            var msgBytes =new Span<byte>(data, (int)size).ToArray();
+            var msgBytes = new Span<byte>(data, (int)size).ToArray();
             OnRawMessage?.Invoke(this, ip, port, messageId, msgBytes);
         }
         private void HandleOnRpcCallNative(EndpointFFI endpoint, bool reliable, long methodId, ulong requestId, long argType, byte* argData, uint argDataSize)
@@ -96,7 +103,7 @@ namespace OmgppSharpClient
             var ip = IpAddressFromEndpoint(endpoint);
             var port = endpoint.port;
             var data = argDataSize == 0 ? null : new Span<byte>(argData, (int)argDataSize).ToArray();
-            OnRpcCall?.Invoke(this, ip, port, reliable,methodId,requestId,argType, data);
+            OnRpcCall?.Invoke(this, ip, port, reliable, methodId, requestId, argType, data);
         }
         public void Dispose()
         {

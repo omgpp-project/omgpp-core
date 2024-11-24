@@ -2,8 +2,14 @@ syntax = "proto2";
 
 option csharp_namespace="awd.awd";
 option java_package = "java.awd";
+
+import "subfolder/subfolder2.proto";
 package sample.messages;
-message Void {}
+
+
+message Void {
+   optional InnerSubfolder2 msg = 1;
+}
 
 message Message {
     optional int64 type = 1;

@@ -32,6 +32,7 @@ namespace OmgppSharpServer
         private IntPtr _handle;
         private bool _disposed;
         private MessageHandler _messageHandler = new MessageHandler();
+        private List<IServerRpcHandler> _rpcHandlers = new List<IServerRpcHandler>();
         public Server(string ip, ushort port)
         {
             fixed (byte* cstr = Encoding.UTF8.GetBytes(ip))
@@ -65,6 +66,12 @@ namespace OmgppSharpServer
         {
             _messageHandler.RegisterOnMessage(callback);
         }
+        public void RegisterRpcHandler(IServerRpcHandler handler)
+        {
+            if (handler == null)
+                return;
+            _rpcHandlers.Add(handler);
+        }
 
         public void Send(Guid client, long messageId, byte[] data)
         {
@@ -75,8 +82,6 @@ namespace OmgppSharpServer
             }
 
         }
-
-
         public void SendReliable(Guid client, long messageId, byte[] data)
         {
             fixed (byte* dataPtr = data)
@@ -130,6 +135,10 @@ namespace OmgppSharpServer
             var port = endpoint.port;
             var data = argDataSize == 0 ? null : new Span<byte>(argData, (int)argDataSize).ToArray();
             OnRpcCall?.Invoke(this, guid, ip, port, reliable, methodId, requestId, argType, data);
+            foreach (var handler in _rpcHandlers)
+            {
+                handler?.HandleRpc(this, guid, ip, port, reliable, methodId, requestId, argType, data);
+            }
         }
 
         private bool OnConnectionRequested(UuidFFI player, EndpointFFI endpoint)
