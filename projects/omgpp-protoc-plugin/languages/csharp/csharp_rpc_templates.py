@@ -29,10 +29,9 @@ def get_rpc_client_handler(service_name:str,service_methods:List[CSharpMethod]):
           var size = message.CalculateSize();
           var bytes = new byte[size];
           message.WriteTo(bytes);
-          client.CallRpc({m.id}, 0, {input_arg_name}.MessageId, bytes, isReliable);
 """
             else:
-               method += f"byte[] bytes=null;"
+               method += f"byte[] bytes= Array.Empty<byte>();"
 
             method += f"""
           var taskCompletionSource = new TaskCompletionSource<{m.return_type}>();
@@ -81,7 +80,7 @@ def get_rpc_client_handler(service_name:str,service_methods:List[CSharpMethod]):
           this.client = client;
           this.client.OnRpcCall += Client_OnRpcCall;
       }}
-      
+
       private void Client_OnRpcCall(Client client, System.Net.IPAddress remoteIp, ushort remotePort, bool isReliable, long methodId, ulong requestId, long argType, byte[]? argData)
       {{
           if(rpcResponseHandlers.TryGetValue(requestId, out var handler))
@@ -111,12 +110,14 @@ def get_rpc_server_handler(service_name,service_methods:List[CSharpMethod]):
         if not m.has_output:
             if m.has_input_message:
                 method += f"if (argType != {m.input_args[0][0]}.MessageId) return;\n"
+                method += f"argData = argData?? Array.Empty<byte>();\n"
                 method += f"service.{m.name}(clientGuid, ip, port, {m.input_args[0][0]}.Parser.ParseFrom(argData));\n"
             else:
                 method += f"service.{m.name}(clientGuid, ip, port);\n"
         else:
             if  m.has_input_message:
                 method += f"if (argType != {m.input_args[0][0]}.MessageId) return;\n"
+                method += f"argData = argData?? Array.Empty<byte>();\n"
                 method += f"var result = service.{m.name}(clientGuid, ip, port, {m.input_args[0][0]}.Parser.ParseFrom(argData));\n"
             else:
                 method += f"var result = service.{m.name}(clientGuid, ip, port);\n"

@@ -132,6 +132,7 @@ def process_messages_usings(buffer: io.StringIO):
     buffer.write("using Google.Protobuf;\n")
 
 def process_service_server_usings(buffer: io.StringIO):
+    buffer.write("using System.Net;\n")
     buffer.write("using global::OmgppSharpCore.Interfaces;\n")
     buffer.write("using Google.Protobuf;\n")
     buffer.write("using OmgppSharpServer;\n")
