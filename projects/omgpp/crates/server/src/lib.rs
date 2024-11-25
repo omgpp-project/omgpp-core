@@ -68,8 +68,8 @@ impl<'a> Server<'a> {
         })
     }
     // TODO Maybe it worth to return a Iterator instead of cloning
-    pub fn active_players(&self) -> Vec<(Uuid, Endpoint)> {
-        self.connection_tracker.borrow().active_players()
+    pub fn active_clients(&self) -> Vec<(Uuid, Endpoint)> {
+        self.connection_tracker.borrow().active_clients()
     }
     pub fn socket(&self) -> &GnsSocket<'static, 'static, IsServer> {
         &self.socket
@@ -102,12 +102,12 @@ impl<'a> Server<'a> {
         socket_op_result
     }
     pub fn socket_poll_messages(&mut self, socket: &GnsNetworkMessage<ToReceive>) {}
-    pub fn send(&self, player: &Uuid, msg_type: i64, data: &[u8]) -> ServerResult<()> {
-        self.send_with_flags(player, msg_type, data, k_nSteamNetworkingSend_Unreliable)
+    pub fn send(&self, client: &Uuid, msg_type: i64, data: &[u8]) -> ServerResult<()> {
+        self.send_with_flags(client, msg_type, data, k_nSteamNetworkingSend_Unreliable)
     }
 
-    pub fn send_reliable(&self, player: &Uuid, msg_type: i64, data: &[u8]) -> ServerResult<()> {
-        self.send_with_flags(player, msg_type, data, k_nSteamNetworkingSend_Reliable)
+    pub fn send_reliable(&self, client: &Uuid, msg_type: i64, data: &[u8]) -> ServerResult<()> {
+        self.send_with_flags(client, msg_type, data, k_nSteamNetworkingSend_Reliable)
     }
 
     pub fn broadcast(&self, msg_type: i64, data: &[u8]) -> ServerResult<()> {
@@ -133,8 +133,8 @@ impl<'a> Server<'a> {
         let connection = self
             .connection_tracker
             .borrow()
-            .player_connection(client)
-            .ok_or_else(|| "There is not such player to send")?;
+            .client_connection(client)
+            .ok_or_else(|| "There is not such client to send")?;
 
         let msg_bytes =
             Server::create_rpc_message(reliable, method_id, request_id, arg_type, arg_data)
@@ -201,17 +201,17 @@ impl<'a> Server<'a> {
         connection_tracker: &RefCell<ConnectionTracker>,
     ) -> ServerResult<()> {
         let endpoint = event.info().to_endpoint();
-        let player_uuid = ConnectionTracker::generate_endpoint_uuid(&endpoint);
+        let client_uuid = ConnectionTracker::generate_endpoint_uuid(&endpoint);
         match (event.old_state(), event.info().state()) {
-            // player tries to connect
+            // client tries to connect
             (
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_None,
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
             ) => {
                 if let Some(cb) = &callbacks.on_connection_changed_callback{
-                    cb(self,&player_uuid, &endpoint, ConnectionState::Connecting);      // TODO add host and port as parameters
+                    cb(self,&client_uuid, &endpoint, ConnectionState::Connecting);      // TODO add host and port as parameters
                 }
-                let should_accept = (callbacks.on_connect_requested_callback)(self,&player_uuid,&endpoint);
+                let should_accept = (callbacks.on_connect_requested_callback)(self,&client_uuid,&endpoint);
                 if should_accept {
                     socket.accept(event.connection()).or_else(|_err| {
                         ServerResult::Err("Cannot accept the connection".to_string())
@@ -226,28 +226,28 @@ impl<'a> Server<'a> {
                     );
                 }
             }
-            // player disconnected gracefully (? or may be not)
+            // client disconnected gracefully (? or may be not)
             (
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting
                 | ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connected,
                  ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_ClosedByPeer
                 |ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_ProblemDetectedLocally,
             ) => {
-                connection_tracker.borrow_mut().track_player_disconnected(&player_uuid);
+                connection_tracker.borrow_mut().track_client_disconnected(&client_uuid);
 
                 if let Some(cb) = &callbacks.on_connection_changed_callback {
-                    cb(self,&player_uuid, &endpoint, ConnectionState::Disconnected);
+                    cb(self,&client_uuid, &endpoint, ConnectionState::Disconnected);
                 }
             }
-            // player connected
+            // client connected
             (
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connected,
             ) => {
-                connection_tracker.borrow_mut().track_player_connected(player_uuid.clone(),endpoint, event.connection());
+                connection_tracker.borrow_mut().track_client_connected(client_uuid.clone(),endpoint, event.connection());
 
                 if let Some(cb) = &callbacks.on_connection_changed_callback {
-                    cb(self,&player_uuid, &endpoint, ConnectionState::Connected);
+                    cb(self,&client_uuid, &endpoint, ConnectionState::Connected);
                 }
             }
 
@@ -265,10 +265,10 @@ impl<'a> Server<'a> {
         let data = event.payload();
         let connection = event.connection();
         let sender = connection_tracker
-            .player_by_connection(&connection)
+            .client_by_connection(&connection)
             .ok_or_else(|| "Unknown connection".to_string())?;
         let endpoint = connection_tracker
-            .player_endpoint(sender)
+            .client_endpoint(sender)
             .ok_or_else(|| "Unknown endpoint".to_string())?;
 
         if let Some(decoded) = GeneralOmgppMessage::parse_from_bytes(data).ok() {
@@ -304,7 +304,7 @@ impl<'a> Server<'a> {
 
     fn send_with_flags(
         &self,
-        player: &Uuid,
+        client: &Uuid,
         msg_type: i64,
         data: &[u8],
         flags: i32,
@@ -312,8 +312,8 @@ impl<'a> Server<'a> {
         let connection = self
             .connection_tracker
             .borrow()
-            .player_connection(player)
-            .ok_or_else(|| "There is not such player to send")?;
+            .client_connection(client)
+            .ok_or_else(|| "There is not such client to send")?;
 
         let msg_bytes = Server::create_regular_message(msg_type, data)
             .or_else(|_or| Err("Cannot create general message".to_string()))?;

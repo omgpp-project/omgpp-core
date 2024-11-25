@@ -13,7 +13,7 @@ pub struct ConnectionTracker {
 }
 
 impl ConnectionTracker {
-    pub fn active_players(&self) -> Vec<(Uuid, Endpoint)> {
+    pub fn active_clients(&self) -> Vec<(Uuid, Endpoint)> {
         let endpoints = &self.endpoints;
         let active_endpoints = endpoints
             .into_iter()
@@ -22,17 +22,17 @@ impl ConnectionTracker {
         active_endpoints
     }
 
-    pub fn player_connection(&self, player: &Uuid) -> Option<GnsConnection> {
+    pub fn client_connection(&self, client: &Uuid) -> Option<GnsConnection> {
         self.connections
-            .get_by_left(player)
+            .get_by_left(client)
             .map(|conn| conn.clone())
     }
-    pub fn player_endpoint(&self, player: &Uuid) -> Option<&Endpoint> {
+    pub fn client_endpoint(&self, client: &Uuid) -> Option<&Endpoint> {
         self.endpoints
-            .get_by_left(player)
+            .get_by_left(client)
             .map(|conn| conn)
     }
-    pub fn track_player_disconnected(&mut self, uuid: &Uuid) {
+    pub fn track_client_disconnected(&mut self, uuid: &Uuid) {
         if self.connections.contains_left(uuid) {
             self.connections.remove_by_left(uuid);
         }
@@ -41,13 +41,13 @@ impl ConnectionTracker {
         }
     }
 
-    pub fn track_player_connected(&mut self, uuid: Uuid, endpoint:Endpoint,connection: GnsConnection) {
+    pub fn track_client_connected(&mut self, uuid: Uuid, endpoint:Endpoint,connection: GnsConnection) {
         self.connections.insert(uuid, connection);
         // TODO decide what todo when we have already associated endpoint
         let _old_endpoint = self.endpoints.insert(uuid, endpoint);   
     }
 
-    pub fn player_by_connection(&self, connection: &GnsConnection) -> Option<&Uuid> {
+    pub fn client_by_connection(&self, connection: &GnsConnection) -> Option<&Uuid> {
         self.connections.get_by_right(connection)
     }
     pub fn active_connections(&self) -> impl Iterator<Item = GnsConnection> + '_ {
