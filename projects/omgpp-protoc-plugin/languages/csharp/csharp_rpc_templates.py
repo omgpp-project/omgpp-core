@@ -127,10 +127,10 @@ def get_rpc_server_handler(service_name,service_methods:List[CSharpMethod]):
             else:
                 method += f"var result = service.{m.name}(clientGuid, ip, port);\n"
             
-            method += f"""var size = result.CalculateSize();
+            method += f"""var size = result?.CalculateSize() ?? 0;
                 var data = ArrayPool<byte>.Shared.Rent(size);
-                result.WriteTo(data);
-                server.CallRpc(clientGuid, methodId, requestId, {m.input_args[0][0]}.MessageId, data, true);
+                result?.WriteTo(data);
+                server.CallRpc(clientGuid, methodId, requestId, {m.input_args[0][0]}.MessageId, data, isReliable);
                 ArrayPool<byte>.Shared.Return(data);\n
 """
 
