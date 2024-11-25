@@ -110,9 +110,11 @@ pub unsafe extern "C" fn server_send(
     uuid: *const UuidFFI,
     msg_type: i64,
     data: *const c_uchar,
+    offset: isize,
     size: usize,
 ) {
-    let msg_data = core::slice::from_raw_parts(data, size);
+
+    let msg_data = core::slice::from_raw_parts(data.offset(offset), size);
     let client_uuid = uuid_from_ffi_ptr(uuid);
     _ = server
         .as_ref()
@@ -126,9 +128,10 @@ pub unsafe extern "C" fn server_send_reliable(
     uuid: *const UuidFFI,
     msg_type: i64,
     data: *const c_uchar,
+    offset: isize,
     size: usize,
 ) {
-    let msg_data = core::slice::from_raw_parts(data, size);
+    let msg_data = core::slice::from_raw_parts(data.offset(offset), size);
     let client_uuid = uuid_from_ffi_ptr(uuid);
     _ = server
         .as_ref()
@@ -140,9 +143,10 @@ pub unsafe extern "C" fn server_broadcast(
     server: *mut Server,
     msg_type: i64,
     data: *const c_uchar,
+    offset: isize,
     size: usize,
 ) {
-    let msg_data = core::slice::from_raw_parts(data, size);
+    let msg_data = core::slice::from_raw_parts(data.offset(offset), size);
     _ = server.as_ref().unwrap().broadcast(msg_type, msg_data)
 }
 #[no_mangle]
@@ -150,9 +154,10 @@ pub unsafe extern "C" fn server_broadcast_reliable(
     server: *mut Server,
     msg_type: i64,
     data: *const c_uchar,
+    offset: isize,
     size: usize,
 ) {
-    let msg_data = core::slice::from_raw_parts(data, size);
+    let msg_data = core::slice::from_raw_parts(data.offset(offset), size);
     _ = server
         .as_ref()
         .unwrap()
@@ -167,12 +172,13 @@ pub unsafe extern "C" fn server_call_rpc(
     request_id: u64,
     arg_type: i64,
     arg_data: *const c_uchar,
+    arg_data_offset: isize,
     arg_data_size: usize,
 ) {
     let client_uuid = uuid_from_ffi_ptr(client);
     let msg_data = match arg_data_size {
         0 => None,
-        _ => Some(core::slice::from_raw_parts(arg_data, arg_data_size)),
+        _ => Some(core::slice::from_raw_parts(arg_data.offset(arg_data_offset), arg_data_size)),
     };
     _ = server.as_ref().unwrap().call_rpc(
         &client_uuid,
@@ -191,11 +197,12 @@ pub unsafe extern "C" fn server_call_rpc_broadcast(
     request_id: u64,
     arg_type: i64,
     arg_data: *const c_uchar,
+    arg_data_offset: isize,
     arg_data_size: usize,
 ) {
     let msg_data = match arg_data_size {
         0 => None,
-        _ => Some(core::slice::from_raw_parts(arg_data, arg_data_size)),
+        _ => Some(core::slice::from_raw_parts(arg_data.offset(arg_data_offset), arg_data_size)),
     };
     _ = server.as_ref().unwrap().call_rpc_broadcast(
         reliable,
