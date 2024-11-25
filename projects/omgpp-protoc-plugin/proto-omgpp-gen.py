@@ -53,7 +53,7 @@ def debug_descriptors(descriptors:List[FileDescriptorProto]):
 if __name__ == "__main__":
     #save_protoc_input(protoc_dev_input_file)
     request = None
-    debug=True
+    debug=False
     # read from file for debug purpose
     if debug:
         file1 = open(protoc_dev_input_file, "rb") 

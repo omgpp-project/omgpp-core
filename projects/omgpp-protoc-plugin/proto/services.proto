@@ -9,4 +9,5 @@ service GameCommands{
     rpc MoveLeft(Void) returns (Void);
     rpc MoveRight(Message) returns (MessageTest);
     rpc MoveUp(google.protobuf.Empty) returns (google.protobuf.Empty);
+    rpc MoveDown(Message) returns (google.protobuf.Empty);
 }

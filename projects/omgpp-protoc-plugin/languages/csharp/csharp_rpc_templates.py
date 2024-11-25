@@ -17,9 +17,10 @@ def get_rpc_client_handler(service_name:str,service_methods:List[CSharpMethod]):
             if m.has_input_message:
                 method += f""" 
           var size = message.CalculateSize();
-          var bytes = new byte[size];
+          var bytes = ArrayPool<byte>.Shared.Rent(size);
           message.WriteTo(bytes);
           client.CallRpc({m.id}, 0, {input_arg_name}.MessageId, bytes, isReliable);
+          ArrayPool<byte>.Shared.Return(bytes);
 """
             else:
                 method += f"client.CallRpc({m.id}, 0, 0, null, isReliable);"
@@ -27,7 +28,7 @@ def get_rpc_client_handler(service_name:str,service_methods:List[CSharpMethod]):
             if  m.has_input_message:
                 method += f""" 
           var size = message.CalculateSize();
-          var bytes = new byte[size];
+          var bytes = ArrayPool<byte>.Shared.Rent(size);
           message.WriteTo(bytes);
 """
             else:
@@ -40,7 +41,10 @@ def get_rpc_client_handler(service_name:str,service_methods:List[CSharpMethod]):
           cancellationToken.CancelAfter(1000);
 
           if(rpcResponseHandlers.ContainsKey(reqId))
+          {{
+              ArrayPool<byte>.Shared.Return(bytes);
               throw new Exception("Internal error; Request Id already registered");
+          }}
 
           var tokenRegisterHandler = cancellationToken.Token.Register(() =>
           {{
@@ -62,6 +66,7 @@ def get_rpc_client_handler(service_name:str,service_methods:List[CSharpMethod]):
               rpcResponseHandlers.Remove(reqId);
           }};
           client.CallRpc({m.id}, reqId, {input_arg_name}.MessageId,bytes,isReliable);
+          ArrayPool<byte>.Shared.Return(bytes);
           return taskCompletionSource.Task;
 """
         method += "}\n"
@@ -123,10 +128,10 @@ def get_rpc_server_handler(service_name,service_methods:List[CSharpMethod]):
                 method += f"var result = service.{m.name}(clientGuid, ip, port);\n"
             
             method += f"""var size = result.CalculateSize();
-                byte[] data = new byte[size];
+                var data = ArrayPool<byte>.Shared.Rent(size);
                 result.WriteTo(data);
-
-                server.CallRpc(clientGuid, methodId, requestId, {m.input_args[0][0]}.MessageId, data, true);\n
+                server.CallRpc(clientGuid, methodId, requestId, {m.input_args[0][0]}.MessageId, data, true);
+                ArrayPool<byte>.Shared.Return(data);\n
 """
 
         method += "}\n"
