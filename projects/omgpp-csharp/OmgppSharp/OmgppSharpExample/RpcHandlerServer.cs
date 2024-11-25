@@ -39,10 +39,10 @@ namespace Sample.Messages
             if (argType != global::awd.awd.Void.MessageId) return;
             argData = argData ?? Array.Empty<byte>();
             var result = service.MoveLeft(clientGuid, ip, port, global::awd.awd.Void.Parser.ParseFrom(argData));
-            var size = result.CalculateSize();
+            var size = result?.CalculateSize() ?? 0;
             var data = ArrayPool<byte>.Shared.Rent(size);
-            result.WriteTo(data);
-            server.CallRpc(clientGuid, methodId, requestId, global::awd.awd.Void.MessageId, data, true);
+            result?.WriteTo(data);
+            server.CallRpc(clientGuid, methodId, requestId, global::awd.awd.Void.MessageId, data, isReliable);
             ArrayPool<byte>.Shared.Return(data);
 
         }
@@ -51,10 +51,10 @@ namespace Sample.Messages
             if (argType != global::awd.awd.Message.MessageId) return;
             argData = argData ?? Array.Empty<byte>();
             var result = service.MoveRight(clientGuid, ip, port, global::awd.awd.Message.Parser.ParseFrom(argData));
-            var size = result.CalculateSize();
+            var size = result?.CalculateSize() ?? 0;
             var data = ArrayPool<byte>.Shared.Rent(size);
-            result.WriteTo(data);
-            server.CallRpc(clientGuid, methodId, requestId, global::awd.awd.Message.MessageId, data, true);
+            result?.WriteTo(data);
+            server.CallRpc(clientGuid, methodId, requestId, global::awd.awd.Message.MessageId, data, isReliable);
             ArrayPool<byte>.Shared.Return(data);
 
         }
@@ -81,4 +81,3 @@ namespace Sample.Messages
         }
     }
 }
-
