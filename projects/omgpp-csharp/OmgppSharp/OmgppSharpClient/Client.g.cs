@@ -38,13 +38,13 @@ namespace OmgppNative
         public static extern void client_register_on_rpc(void* client, delegate* unmanaged[Cdecl]<EndpointFFI, bool, long, ulong, long, byte*, nuint, void> callback);
 
         [DllImport(__DllName, EntryPoint = "client_send", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        public static extern void client_send(void* client, long msg_type, byte* data, nuint size);
+        public static extern void client_send(void* client, long msg_type, byte* data, nint offset, nuint size);
 
         [DllImport(__DllName, EntryPoint = "client_send_reliable", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        public static extern void client_send_reliable(void* client, long msg_type, byte* data, nuint size);
+        public static extern void client_send_reliable(void* client, long msg_type, byte* data, nint offset, nuint size);
 
         [DllImport(__DllName, EntryPoint = "client_call_rpc", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        public static extern void client_call_rpc(void* client, [MarshalAs(UnmanagedType.U1)] bool reliable, long method_id, ulong request_id, long arg_type, byte* arg_data, nuint arg_data_size);
+        public static extern void client_call_rpc(void* client, [MarshalAs(UnmanagedType.U1)] bool reliable, long method_id, ulong request_id, long arg_type, byte* arg_data, nint arg_data_offset, nuint arg_data_size);
 
         [DllImport(__DllName, EntryPoint = "client_destroy", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern void client_destroy(void* client);

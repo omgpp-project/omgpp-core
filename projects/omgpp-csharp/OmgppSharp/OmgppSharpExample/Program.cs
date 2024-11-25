@@ -15,6 +15,11 @@ namespace OmgppSharpExample
 
         class RpcServer : IGameCommandsServer
         {
+            public void MoveDown(Guid clientGuid, IPAddress ip, ushort port, Message message)
+            {
+                Console.WriteLine($"Client {clientGuid} MoveDown");
+            }
+
             public awd.awd.Void MoveLeft(Guid clientGuid, IPAddress ip, ushort port, awd.awd.Void message)
             {
                 Console.WriteLine($"Client {clientGuid} MoveLeft");
@@ -26,7 +31,6 @@ namespace OmgppSharpExample
                 Console.WriteLine($"Client {clientGuid} MoveRight");
                 return new MessageTest();
             }
-
             public void MoveUp(Guid clientGuid, IPAddress ip, ushort port)
             {
                 Console.WriteLine($"Client {clientGuid} MoveUp");
@@ -108,6 +112,10 @@ namespace OmgppSharpExample
                         Console.WriteLine($"RPC request Right");
                         var rightResponse = await rpcHandler.MoveRight(new Message(), true);
                         Console.WriteLine($"RPC Right response {rightResponse}");
+                        break;
+                    case "d":
+                        Console.WriteLine($"RPC request Down");
+                        rpcHandler.MoveDown(new Message(), true);
                         break;
                     default: break;
                 }

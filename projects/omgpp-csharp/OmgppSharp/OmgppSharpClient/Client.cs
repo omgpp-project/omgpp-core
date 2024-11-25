@@ -56,26 +56,42 @@ namespace OmgppSharpClient
             OmgppClientNative.client_disconnect(_handle.ToPointer());
         }
 
-        public void Send(long messageId, byte[] data)
+        public void Send(long messageId, Span<byte> data)
         {
             fixed (byte* dataPtr = data)
             {
-                OmgppClientNative.client_send(_handle.ToPointer(), messageId, dataPtr, (nuint)data.Length);
+                OmgppClientNative.client_send(_handle.ToPointer(), messageId, dataPtr,0,(nuint)data.Length);
             }
         }
-        public void SendReliable(long messageId, byte[] data)
+        public void SendReliable(long messageId, Span<byte> data)
         {
             fixed (byte* dataPtr = data)
             {
-                OmgppClientNative.client_send_reliable(_handle.ToPointer(), messageId, dataPtr, (nuint)data.Length);
+                OmgppClientNative.client_send_reliable(_handle.ToPointer(), messageId, dataPtr,0, (nuint)data.Length);
             }
         }
-        public void CallRpc(long methodId, ulong requestId, long argType, byte[]? argData, bool reliable)
+        public void CallRpc(long methodId, ulong requestId, long argType, Span<byte> argData, bool reliable)
         {
             fixed (byte* argDataPtr = argData)
             {
-                OmgppClientNative.client_call_rpc(_handle.ToPointer(), reliable, methodId, requestId, argType, argDataPtr, (nuint)(argData?.Length ?? 0));
+                OmgppClientNative.client_call_rpc(_handle.ToPointer(), reliable, methodId, requestId, argType, argDataPtr, 0,(nuint)argData.Length);
             }
+        }
+        public void Send(long messageId, byte[] data,int offset,int length)
+        {
+            var span = new Span<byte>(data, offset, length);
+            Send(messageId, span);
+
+        }
+        public void SendReliable(long messageId, byte[] data, int offset, int length)
+        {
+            var span = new Span<byte>(data, offset, length);
+            SendReliable(messageId, span);
+        }
+        public void CallRpc(long methodId, ulong requestId, long argType, byte[]? argData,int offset,int length, bool reliable)
+        {
+            var span = new Span<byte>(argData, offset, length);
+            CallRpc(methodId,requestId,argType,span,reliable);
         }
         public void Process()
         {

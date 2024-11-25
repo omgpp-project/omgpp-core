@@ -4,6 +4,7 @@
 * Any changes will be discarded after regeneration
 * </auto-generated>
 */
+using System.Buffers;
 using System.Net;
 using global::OmgppSharpCore.Interfaces;
 using Google.Protobuf;
@@ -16,6 +17,7 @@ namespace Sample.Messages
         global::awd.awd.Void MoveLeft(System.Guid clientGuid, System.Net.IPAddress ip, ushort port, global::awd.awd.Void message);
         global::awd.awd.MessageTest MoveRight(System.Guid clientGuid, System.Net.IPAddress ip, ushort port, global::awd.awd.Message message);
         void MoveUp(System.Guid clientGuid, System.Net.IPAddress ip, ushort port);
+        void MoveDown(System.Guid clientGuid, System.Net.IPAddress ip, ushort port, global::awd.awd.Message message);
     }
 
     public class GameCommandsServerHandler : global::OmgppSharpServer.IServerRpcHandler
@@ -29,6 +31,7 @@ namespace Sample.Messages
             RegisterRpc(310292, HandleMoveLeft);
             RegisterRpc(407415, HandleMoveRight);
             RegisterRpc(316538, HandleMoveUp);
+            RegisterRpc(347482, HandleMoveDown);
 
         }
         private void HandleMoveLeft(Server server, Guid clientGuid, IPAddress ip, ushort port, bool isReliable, long methodId, ulong requestId, long argType, byte[]? argData)
@@ -37,10 +40,10 @@ namespace Sample.Messages
             argData = argData ?? Array.Empty<byte>();
             var result = service.MoveLeft(clientGuid, ip, port, global::awd.awd.Void.Parser.ParseFrom(argData));
             var size = result.CalculateSize();
-            byte[] data = new byte[size];
+            var data = ArrayPool<byte>.Shared.Rent(size);
             result.WriteTo(data);
-
             server.CallRpc(clientGuid, methodId, requestId, global::awd.awd.Void.MessageId, data, true);
+            ArrayPool<byte>.Shared.Return(data);
 
         }
         private void HandleMoveRight(Server server, Guid clientGuid, IPAddress ip, ushort port, bool isReliable, long methodId, ulong requestId, long argType, byte[]? argData)
@@ -49,15 +52,21 @@ namespace Sample.Messages
             argData = argData ?? Array.Empty<byte>();
             var result = service.MoveRight(clientGuid, ip, port, global::awd.awd.Message.Parser.ParseFrom(argData));
             var size = result.CalculateSize();
-            byte[] data = new byte[size];
+            var data = ArrayPool<byte>.Shared.Rent(size);
             result.WriteTo(data);
-
             server.CallRpc(clientGuid, methodId, requestId, global::awd.awd.Message.MessageId, data, true);
+            ArrayPool<byte>.Shared.Return(data);
 
         }
         private void HandleMoveUp(Server server, Guid clientGuid, IPAddress ip, ushort port, bool isReliable, long methodId, ulong requestId, long argType, byte[]? argData)
         {
             service.MoveUp(clientGuid, ip, port);
+        }
+        private void HandleMoveDown(Server server, Guid clientGuid, IPAddress ip, ushort port, bool isReliable, long methodId, ulong requestId, long argType, byte[]? argData)
+        {
+            if (argType != global::awd.awd.Message.MessageId) return;
+            argData = argData ?? Array.Empty<byte>();
+            service.MoveDown(clientGuid, ip, port, global::awd.awd.Message.Parser.ParseFrom(argData));
         }
 
 
@@ -72,3 +81,4 @@ namespace Sample.Messages
         }
     }
 }
+

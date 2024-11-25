@@ -73,51 +73,87 @@ namespace OmgppSharpServer
             _rpcHandlers.Add(handler);
         }
 
-        public void Send(Guid client, long messageId, byte[] data)
+        public void Send(Guid client, long messageId, Span<byte> data)
         {
             fixed (byte* dataPtr = data)
             {
                 var uuidFFi = FfiFromGuid(client);
-                OmgppServerNative.server_send(_handle.ToPointer(), &uuidFFi, messageId, dataPtr, (nuint)data.Length);
+                OmgppServerNative.server_send(_handle.ToPointer(), &uuidFFi, messageId, dataPtr, 0, (nuint)data.Length);
             }
+        }
+
+        public void SendReliable(Guid client, long messageId, Span<byte> data)
+        {
+            fixed (byte* dataPtr = data)
+            {
+                var uuidFFi = FfiFromGuid(client);
+                OmgppServerNative.server_send_reliable(_handle.ToPointer(), &uuidFFi, messageId, dataPtr,0, (nuint)data.Length);
+            }
+        }
+        public void Broadcast(long messageId, Span<byte> data)
+        {
+            fixed (byte* dataPtr = data)
+            {
+                OmgppServerNative.server_broadcast(_handle.ToPointer(), messageId, dataPtr, 0, (nuint)data.Length);
+            }
+        }
+        public void BroadcastReliable(long messageId, Span<byte> data)
+        {
+            fixed (byte* dataPtr = data)
+            {
+                OmgppServerNative.server_broadcast_reliable(_handle.ToPointer(), messageId, dataPtr, 0, (nuint)data.Length);
+            }
+        }
+        public void CallRpc(Guid client, long methodId, ulong requestId, long argType, Span<byte> argData, bool reliable)
+        {
+            fixed (byte* argDataPtr = argData)
+            {
+                var uuidFFi = FfiFromGuid(client);
+                OmgppServerNative.server_call_rpc(_handle.ToPointer(), &uuidFFi, reliable, methodId, requestId, argType, argDataPtr, 0, (nuint)argData.Length);
+            }
+        }
+
+        public void CallRpcBroadcast(long methodId, ulong requestId, long argType, Span<byte> argData, bool reliable)
+        {
+            fixed (byte* argDataPtr = argData)
+            {
+                OmgppServerNative.server_call_rpc_broadcast(_handle.ToPointer(), reliable, methodId, requestId, argType, argDataPtr, 0, (nuint)argData.Length);
+            }
+        }
+
+        public void Send(Guid client, long messageId, byte[] data, int offset, int length)
+        {
+            var span = new Span<byte>(data, offset, length);
+            Send(client, messageId, span);  
+        }
+
+        public void SendReliable(Guid client, long messageId, byte[] data, int offset, int length)
+        {
+            var span = new Span<byte>(data, offset, length);
+            SendReliable(client, messageId, span);
+        }
+        public void Broadcast(long messageId, byte[] data, int offset, int length)
+        {
+            var span = new Span<byte>(data, offset, length);
+            Broadcast(messageId, span);
 
         }
-        public void SendReliable(Guid client, long messageId, byte[] data)
+        public void BroadcastReliable(long messageId, byte[] data,int offset,int length)
         {
-            fixed (byte* dataPtr = data)
-            {
-                var uuidFFi = FfiFromGuid(client);
-                OmgppServerNative.server_send_reliable(_handle.ToPointer(), &uuidFFi, messageId, dataPtr, (nuint)data.Length);
-            }
+            var span = new Span<byte>(data, offset, length);
+            BroadcastReliable(messageId, span);
+
         }
-        public void Broadcast(long messageId, byte[] data)
+        public void CallRpc(Guid client, long methodId, ulong requestId, long argType, byte[]? argData, int offset, int length, bool reliable)
         {
-            fixed (byte* dataPtr = data)
-            {
-                OmgppServerNative.server_broadcast(_handle.ToPointer(), messageId, dataPtr, (nuint)data.Length);
-            }
+            var span = new Span<byte>(argData, offset, length);
+            CallRpc(client, methodId, requestId, argType, span, reliable);
         }
-        public void BroadcastReliable(long messageId, byte[] data)
+
+        public void CallRpcBroadcast(long methodId, ulong requestId, long argType, byte[]? argData, int offset, int length,bool reliable)
         {
-            fixed (byte* dataPtr = data)
-            {
-                OmgppServerNative.server_broadcast_reliable(_handle.ToPointer(), messageId, dataPtr, (nuint)data.Length);
-            }
-        }
-        public void CallRpc(Guid client, long methodId, ulong requestId, long argType, byte[]? argData, bool reliable)
-        {
-            fixed (byte* argDataPtr = argData)
-            {
-                var uuidFFi = FfiFromGuid(client);
-                OmgppServerNative.server_call_rpc(_handle.ToPointer(), &uuidFFi, reliable, methodId, requestId, argType, argDataPtr, (nuint)(argData?.Length ?? 0));
-            }
-        }
-        public void CallRpcBroadcast(long methodId, ulong requestId, long argType, byte[]? argData, bool reliable)
-        {
-            fixed (byte* argDataPtr = argData)
-            {
-                OmgppServerNative.server_call_rpc_broadcast(_handle.ToPointer(), reliable, methodId, requestId, argType, argDataPtr, (nuint)(argData?.Length ?? 0));
-            }
+            var span = new Span<byte>(argData,offset, length);
+            CallRpcBroadcast(methodId,requestId, argType, span, reliable);
         }
         private void OnMessageNative(UuidFFI player, EndpointFFI endpoint, long messageId, byte* data, uint size)
         {
