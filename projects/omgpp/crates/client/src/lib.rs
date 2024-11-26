@@ -173,7 +173,7 @@ impl Client {
     ) {
         let endpoint = event.info().to_endpoint();
         match (event.old_state(), event.info().state()) {
-            // player tries to connect
+            // client tries to connect
             (
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_None,
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
@@ -183,7 +183,7 @@ impl Client {
                     cb(&endpoint, ConnectionState::Connecting);      // TODO add host and port as parameters
                 }
             }
-            // player disconnected gracefully (? or may be not)
+            // client disconnected gracefully (? or may be not)
             (
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting
                 | ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connected,
@@ -195,7 +195,7 @@ impl Client {
                     cb(&endpoint, ConnectionState::Disconnected);
                 }
             }
-            // player connected
+            // client connected
             (
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connected,

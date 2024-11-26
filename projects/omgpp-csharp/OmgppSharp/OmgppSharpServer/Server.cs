@@ -14,10 +14,10 @@ namespace OmgppSharpServer
 {
     unsafe public class Server : IDisposable
     {
-        delegate void ConnectionStateChangedNativeDelegate(UuidFFI player, EndpointFFI endpoint, ConnectionState state);
-        delegate bool ConnectionRequestedNativeDelegate(UuidFFI player, EndpointFFI endpoint);
-        delegate void RawMessageNativeDelegate(UuidFFI player, EndpointFFI endpoint, long messageId, byte* data, uint size);
-        delegate void RpcCallNativeDelegate(UuidFFI player, EndpointFFI endpoint, bool reliable, long methodId, ulong requestId, long argType, byte* argData, uint size);
+        delegate void ConnectionStateChangedNativeDelegate(UuidFFI client, EndpointFFI endpoint, ConnectionState state);
+        delegate bool ConnectionRequestedNativeDelegate(UuidFFI client, EndpointFFI endpoint);
+        delegate void RawMessageNativeDelegate(UuidFFI client, EndpointFFI endpoint, long messageId, byte* data, uint size);
+        delegate void RpcCallNativeDelegate(UuidFFI client, EndpointFFI endpoint, bool reliable, long methodId, ulong requestId, long argType, byte* argData, uint size);
 
         public delegate bool ConnectionRequestDelegate(Server server, Guid clientGuid, IPAddress ip, ushort port);
         public delegate void ConnectionStateChangedDelegate(Server server, Guid clientGuid, IPAddress ip, ushort port, ConnectionState state);
@@ -155,18 +155,18 @@ namespace OmgppSharpServer
             var span = new Span<byte>(argData,offset, length);
             CallRpcBroadcast(methodId,requestId, argType, span, reliable);
         }
-        private void OnMessageNative(UuidFFI player, EndpointFFI endpoint, long messageId, byte* data, uint size)
+        private void OnMessageNative(UuidFFI client, EndpointFFI endpoint, long messageId, byte* data, uint size)
         {
-            var guid = GuidFromFFI(player);
+            var guid = GuidFromFFI(client);
             var ip = IpAddressFromEndpoint(endpoint);
             var port = endpoint.port;
             var dataSpan = new Span<byte>(data, (int)size).ToArray();
             OnRawMessage?.Invoke(this, guid, ip, port, messageId, dataSpan);
             _messageHandler.HandleRawMessage(messageId, dataSpan);
         }
-        private void OnRcpCallNative(UuidFFI player, EndpointFFI endpoint, bool reliable, long methodId, ulong requestId, long argType, byte* argData, uint argDataSize)
+        private void OnRcpCallNative(UuidFFI client, EndpointFFI endpoint, bool reliable, long methodId, ulong requestId, long argType, byte* argData, uint argDataSize)
         {
-            var guid = GuidFromFFI(player);
+            var guid = GuidFromFFI(client);
             var ip = IpAddressFromEndpoint(endpoint);
             var port = endpoint.port;
             var data = argDataSize == 0 ? null : new Span<byte>(argData, (int)argDataSize).ToArray();
@@ -177,7 +177,7 @@ namespace OmgppSharpServer
             }
         }
 
-        private bool OnConnectionRequested(UuidFFI player, EndpointFFI endpoint)
+        private bool OnConnectionRequested(UuidFFI client, EndpointFFI endpoint)
         {
             if (OnConnectionRequest == null)
                 return true;
@@ -186,13 +186,13 @@ namespace OmgppSharpServer
             var port = endpoint.port;
             IPAddress address = new IPAddress(bytes);
 
-            return OnConnectionRequest.Invoke(this, new Guid(new Span<byte>(player.bytes, 16)), address, port);
+            return OnConnectionRequest.Invoke(this, new Guid(new Span<byte>(client.bytes, 16)), address, port);
         }
 
 
-        private void HandleOnConnectionChanged(UuidFFI player, EndpointFFI endpoint, ConnectionState state)
+        private void HandleOnConnectionChanged(UuidFFI client, EndpointFFI endpoint, ConnectionState state)
         {
-            var guid = GuidFromFFI(player);
+            var guid = GuidFromFFI(client);
             var ip = IpAddressFromEndpoint(endpoint);
             var port = endpoint.port;
             OnConnectionStateChanged?.Invoke(this, guid, ip, port, state);

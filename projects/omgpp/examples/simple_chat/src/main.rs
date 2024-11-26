@@ -36,7 +36,7 @@ fn start_server() {
     let mut server = Server::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 55655).unwrap();
     server.register_on_connect_requested(|_server,_id, _endpoint| true);
     server.register_on_connection_state_changed(|server,id, endpoint, state| {
-        let msg= format!("User {:?} {:?}",endpoint,state);
+        let msg= format!("Client {:?} {:?}",endpoint,state);
         let status  = server.broadcast(0,msg.as_bytes());
 
         println!("{:?} {:?} {:?} {:?}", id, state,msg, status)
@@ -60,7 +60,7 @@ fn start_server() {
             i += 1;
             //_ = server.broadcast(i, format!("Time is {:?}", now).as_bytes());
         }
-        // send data to users with fixed FPS
+        // send data to clients with fixed FPS
     }
 }
 fn start_client() {
@@ -150,7 +150,7 @@ fn start_client() {
         }
     });
 
-    // user input
+    // client input
     loop {
         let mut input = String::new();
         _ = std::io::stdin().read_line(&mut input).expect("Some error");
