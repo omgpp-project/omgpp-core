@@ -1,0 +1,24 @@
+[package]
+name = "regular_chat_server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gns = { git="https://github.com/hussein-aitlahcen/gns-rs.git",rev="a0fc575" }
+gns-sys = { git="https://github.com/hussein-aitlahcen/gns-rs.git",rev="a0fc575" }
+md5 = { version="0.7.0" }
+bimap = { version="0.6.3" }
+either = { version = "1.13.0" }
+server= {path = "../../crates/server"}
+client= {path = "../../crates/client"}
+omgpp-core = {path = "../../crates/omgpp-core" }
+serde = { version = "1.0.215", features = ["derive"] }
+serde_json = "1.0.133"
+
+[dependencies.uuid]
+version = "1.11.0"
+features = [
+    "v4",                # Lets you generate random UUIDs
+    "fast-rng",          # Use a faster (but still sufficiently random) RNG
+    "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
+]
