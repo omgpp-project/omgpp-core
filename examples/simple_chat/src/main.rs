@@ -73,14 +73,17 @@ fn start_client() {
 
         let mut client = Client::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
 
-        client.register_on_connection_state_changed(move |endpoint, state| {
+        client.register_on_connection_state_changed(move |client,endpoint, state| {
             println!("{:?} {:?}", endpoint, state);
             if state == ConnectionState::Disconnected {
                 should_reconnected_cloned.set(true);
             }
+            if state == ConnectionState::Connected{
+               _= client.send(1, "IM HERE".as_bytes());
+            }
         });
 
-        client.register_on_message(|endpoint, msg_type, data| {
+        client.register_on_message(|_client,endpoint, msg_type, data| {
             println!(
                 "Server says: {:?} Type: {:?} Data: {:?}",
                 endpoint,
@@ -88,7 +91,7 @@ fn start_client() {
                 String::from_utf8(data)
             );
         });
-        client.register_on_rpc(|endpoint, reliable, method_id, request_id, arg_type, data: Vec<u8>|{
+        client.register_on_rpc(|_client,endpoint, reliable, method_id, request_id, arg_type, data: Vec<u8>|{
             println!(
                 "Rpc call {:?} reliable: {:?} method: {:?} request: {:?} arg: {:?} data_size: {:?} data_cap: {:?} data: {:?}",
                 endpoint,

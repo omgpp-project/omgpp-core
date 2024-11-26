@@ -1,6 +1,6 @@
 mod ffi;
 
-use std::net::IpAddr;
+use std::{cell::RefCell, net::IpAddr};
 
 use gns::{GnsSocket, IsClient, IsCreated};
 use gns_sys::{
@@ -16,9 +16,9 @@ use omgpp_core::{
 };
 use protobuf::Message;
 
-type OnConnectionChangedCallback = Box<dyn Fn(&Endpoint, ConnectionState) + 'static>;
-type OnMessageCallback = Box<dyn Fn(&Endpoint, i64, Vec<u8>) + 'static>;
-type OnRpcCallback = Box<dyn Fn(&Endpoint, bool, i64, u64, i64, Vec<u8>) + 'static>;
+type OnConnectionChangedCallback = Box<dyn Fn(&Client,&Endpoint, ConnectionState) + 'static>;
+type OnMessageCallback = Box<dyn Fn(&Client,&Endpoint, i64, Vec<u8>) + 'static>;
+type OnRpcCallback = Box<dyn Fn(&Client,&Endpoint, bool, i64, u64, i64, Vec<u8>) + 'static>;
 
 type ClientResult<T> = Result<T, String>; // TODO replace error with enum
 struct ClientCallbacks {
@@ -39,45 +39,46 @@ impl ConnectionTracker {
 // TODO In order to support multiple servers, move `socket` in ConnectionTracker
 pub struct Client {
     socket: Option<GnsSocket<'static, 'static, IsClient>>,
-    callbacks: ClientCallbacks,
-    connection_tracker: ConnectionTracker,
+    callbacks: RefCell::<ClientCallbacks>,
+    connection_tracker: RefCell::<ConnectionTracker>,
 }
 impl Client {
     pub fn new(server_ip: IpAddr, server_port: u16) -> Client {
         Client {
             socket: None,
-            callbacks: ClientCallbacks {
+            callbacks: RefCell::new(ClientCallbacks {
                 on_connection_changed_callback: None,
                 on_message_callback: None,
                 on_rpc_callback: None,
-            },
-            connection_tracker: ConnectionTracker {
+            }),
+            connection_tracker: RefCell::new(ConnectionTracker {
                 state: ConnectionState::None,
                 server_endpoint: Endpoint {
                     ip: server_ip,
                     port: server_port,
                 },
-            },
+            }),
         }
     }
     pub fn register_on_connection_state_changed(
-        &mut self,
-        callback: impl Fn(&Endpoint, ConnectionState) + 'static,
+        &self,
+        callback: impl Fn(&Client,&Endpoint, ConnectionState) + 'static,
     ) {
-        self.callbacks.on_connection_changed_callback = Some(Box::from(callback));
+        self.callbacks.borrow_mut().on_connection_changed_callback = Some(Box::from(callback));
     }
-    pub fn register_on_message(&mut self, callback: impl Fn(&Endpoint, i64, Vec<u8>) + 'static) {
-        self.callbacks.on_message_callback = Some(Box::from(callback));
+    pub fn register_on_message(&self, callback: impl Fn(&Client,&Endpoint, i64, Vec<u8>) + 'static) {
+        self.callbacks.borrow_mut().on_message_callback = Some(Box::from(callback));
     }
     pub fn register_on_rpc(
-        &mut self,
-        callback: impl Fn(&Endpoint, bool, i64, u64, i64, Vec<u8>) + 'static,
+        &self,
+        callback: impl Fn(&Client,&Endpoint, bool, i64, u64, i64, Vec<u8>) + 'static,
     ) {
-        self.callbacks.on_rpc_callback = Some(Box::from(callback));
+        self.callbacks.borrow_mut().on_rpc_callback = Some(Box::from(callback));
     }
     pub fn connect(&mut self) -> ClientResult<()> {
         let old_socket = &self.socket;
-        let current_connection_state = &self.connection_tracker.state;
+        let tracker = &self.connection_tracker.borrow();
+        let current_connection_state = &tracker.state;
 
         match (old_socket, current_connection_state) {
             (Some(_), ConnectionState::Connecting | ConnectionState::Connected) => {
@@ -88,11 +89,11 @@ impl Client {
         let gns = GNS.as_ref()?;
         let gns_socket = GnsSocket::<IsCreated>::new(&gns.global, &gns.utils).unwrap();
 
-        let address_to_connect = match self.connection_tracker.server_endpoint.ip {
+        let address_to_connect = match tracker.server_endpoint.ip {
             IpAddr::V4(v4) => v4.to_ipv6_mapped(),
             IpAddr::V6(v6) => v6,
         };
-        let port = self.connection_tracker.server_endpoint.port;
+        let port = tracker.server_endpoint.port;
         let client_socket = gns_socket
             .connect(address_to_connect, port)
             .or(Err("Cannot create socket to connect to server".to_string()))?;
@@ -107,7 +108,7 @@ impl Client {
         }
     }
 
-    pub fn process<const N: usize>(&mut self) -> ClientResult<()> {
+    pub fn process<const N: usize>(&self) -> ClientResult<()> {
         if self.socket.is_none() {
             return Err("Socket not initialized".to_string());
         }
@@ -115,11 +116,11 @@ impl Client {
         socket.poll_callbacks();
         let mut socket_op_is_success = ClientResult::Ok(());
         let _processed_event_count = socket.poll_event::<N>(|event| {
-            Client::process_connection_events(event, &self.callbacks, &mut self.connection_tracker)
+            Client::process_connection_events(&self,event, &self.callbacks, &self.connection_tracker);
         });
         let _processed_msg_count = socket.poll_messages::<N>(|msg| {
             socket_op_is_success =
-                Client::process_messages(msg, &self.connection_tracker, &self.callbacks);
+                Client::process_messages(self,msg, &self.connection_tracker, &self.callbacks);
         });
         socket_op_is_success
     }
@@ -167,9 +168,10 @@ impl Client {
         Ok(())
     }
     fn process_connection_events(
+        &self,
         event: gns::GnsConnectionEvent,
-        callbacks: &ClientCallbacks,
-        connection_tracker: &mut ConnectionTracker,
+        callbacks: &RefCell<ClientCallbacks>,
+        connection_tracker: &RefCell<ConnectionTracker>,
     ) {
         let endpoint = event.info().to_endpoint();
         match (event.old_state(), event.info().state()) {
@@ -178,9 +180,9 @@ impl Client {
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_None,
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
             ) => {
-                connection_tracker.track_connection_state(ConnectionState::Connecting);
-                if let Some(cb) = &callbacks.on_connection_changed_callback{
-                    cb(&endpoint, ConnectionState::Connecting);      // TODO add host and port as parameters
+                connection_tracker.borrow_mut().track_connection_state(ConnectionState::Connecting);
+                if let Some(cb) = &callbacks.borrow().on_connection_changed_callback{
+                    cb(self,&endpoint, ConnectionState::Connecting);      // TODO add host and port as parameters
                 }
             }
             // client disconnected gracefully (? or may be not)
@@ -190,9 +192,9 @@ impl Client {
                  ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_ClosedByPeer
                 |ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_ProblemDetectedLocally,
             ) => {
-                connection_tracker.track_connection_state(ConnectionState::Disconnected);
-                if let Some(cb) = &callbacks.on_connection_changed_callback {
-                    cb(&endpoint, ConnectionState::Disconnected);
+                connection_tracker.borrow_mut().track_connection_state(ConnectionState::Disconnected);
+                if let Some(cb) = &callbacks.borrow().on_connection_changed_callback {
+                    cb(self,&endpoint, ConnectionState::Disconnected);
                 }
             }
             // client connected
@@ -200,9 +202,9 @@ impl Client {
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connected,
             ) => {
-                connection_tracker.track_connection_state(ConnectionState::Connected);
-                if let Some(cb) = &callbacks.on_connection_changed_callback {
-                    cb(&endpoint, ConnectionState::Connected);
+                connection_tracker.borrow_mut().track_connection_state(ConnectionState::Connected);
+                if let Some(cb) = &callbacks.borrow().on_connection_changed_callback {
+                    cb(self,&endpoint, ConnectionState::Connected);
                 }
             }
 
@@ -211,24 +213,26 @@ impl Client {
     }
 
     fn process_messages(
+        &self,
         gns_msg: &gns::GnsNetworkMessage<gns::ToReceive>,
-        connection_tracker: &ConnectionTracker,
-        callbacks: &ClientCallbacks,
+        connection_tracker: &RefCell<ConnectionTracker>,
+        callbacks: &RefCell<ClientCallbacks>,
     ) -> ClientResult<()> {
         let data = gns_msg.payload();
-        let sender = &connection_tracker.server_endpoint;
+        let sender = &connection_tracker.borrow().server_endpoint;
         if let Some(decoded) = GeneralOmgppMessage::parse_from_bytes(data).ok() {
             // we decoded the message
             match decoded.data {
                 Some(Data::Message(message)) => {
                     // cb stands for callback
-                    if let Some(cb) = &callbacks.on_message_callback {
-                        cb(sender, message.type_, message.data)
+                    if let Some(cb) = &callbacks.borrow().on_message_callback {
+                        cb(self,sender, message.type_, message.data)
                     }
                 }
                 Some(Data::Rpc(rpc_call)) => {
-                    if let Some(rpc_callback) = &callbacks.on_rpc_callback {
+                    if let Some(rpc_callback) = &callbacks.borrow().on_rpc_callback {
                         rpc_callback(
+                            self,
                             sender,
                             rpc_call.reliable,
                             rpc_call.method_id,

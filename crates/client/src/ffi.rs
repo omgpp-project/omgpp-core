@@ -51,7 +51,7 @@ pub unsafe extern "C" fn client_register_on_connection_state_change(
     client
         .as_mut()
         .unwrap()
-        .register_on_connection_state_changed(move |endpoint, state| {
+        .register_on_connection_state_changed(move |_client,endpoint, state| {
             callback(endpoint.to_ffi(), state)
         });
 }
@@ -64,14 +64,14 @@ pub unsafe extern "C" fn client_register_on_message(
     client
         .as_mut()
         .unwrap()
-        .register_on_message(move |endpoint, message_id, data| {
+        .register_on_message(move |_client,endpoint, message_id, data| {
             callback(endpoint.to_ffi(), message_id, data.as_ptr(), data.len())
         });
 }
 #[no_mangle]
 pub unsafe extern "C" fn client_register_on_rpc(client: *mut Client, callback: ClientOnRpc) {
     client.as_mut().unwrap().register_on_rpc(
-        move |endpoint, reliable, method_id, request_id, arg_type, arg_data| {
+        move |_client,endpoint, reliable, method_id, request_id, arg_type, arg_data| {
             callback(
                 endpoint.to_ffi(),
                 reliable,
