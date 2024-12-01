@@ -12,8 +12,14 @@ message GeneralOmgppMessage {
         int64 arg_type = 6;
         bytes arg_data = 7;
     }
+    message CmdRequest{
+        string cmd = 8;
+        repeated string args = 9;
+        uint64 request_id = 10;
+    }
     oneof data{
-        Message message = 8;
-        RpcCall rpc = 9;
+        Message message = 11;
+        RpcCall rpc = 12;
+        CmdRequest cmd = 13;
     }
 }

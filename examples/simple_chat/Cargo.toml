@@ -13,3 +13,4 @@ either = { version = "1.13.0" }
 omgpp-core = {path = "../../crates/omgpp-core" }
 server= {path = "../../crates/server"}
 client= {path = "../../crates/client"}
+rand={ version = "0.8.5" }

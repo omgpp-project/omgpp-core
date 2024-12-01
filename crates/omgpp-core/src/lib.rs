@@ -5,6 +5,7 @@
 #![allow(dead_code)]
 
 pub mod ffi;
+pub  mod cmd_handler;
 
 use std::{net::IpAddr, sync::LazyLock};
 
@@ -15,6 +16,7 @@ pub mod messages{
     include!(concat!(env!("OUT_DIR"), "/proto/mod.rs"));
 }
 
+
 #[allow(dead_code)]
 #[derive(Debug,Clone,Hash,PartialEq,Eq)]
 #[repr(i16)]
@@ -23,13 +25,21 @@ pub enum ConnectionState {
     Disconnected = 0,
     Disconnecting = 1,
     Connecting = 2,
-    Connected = 3,
+    ConnectedUnverified = 3,
+    Connected = 4,
 }
+
+
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct Endpoint {
     pub ip: IpAddr,
     pub port: u16,
+}
+
+pub struct  OmgppPredefinedCmd;
+impl OmgppPredefinedCmd {
+    pub const AUTH: &str = "omgpp_auth";
 }
 
 pub struct GnsWrapper {

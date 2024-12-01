@@ -2,6 +2,8 @@ pub mod connection_tracker;
 pub mod ffi;
 
 use std::cell::{RefCell, RefMut};
+use std::collections::HashMap;
+use std::time::Duration;
 use std::{fmt::Debug, marker::PhantomData, net::IpAddr};
 
 use connection_tracker::ConnectionTracker;
@@ -11,19 +13,21 @@ use gns_sys::{
     k_nSteamNetworkingSend_Reliable, k_nSteamNetworkingSend_Unreliable,
     ESteamNetworkingConnectionState,
 };
+use omgpp_core::cmd_handler::{CmdHandler, CmdHandlerContainer};
 use omgpp_core::messages::general_message::general_omgpp_message::{self, *};
-use omgpp_core::ToEndpoint;
 use omgpp_core::{
     messages::general_message::GeneralOmgppMessage, ConnectionState, Endpoint, TransmitterHelper,
     GNS,
 };
+use omgpp_core::{OmgppPredefinedCmd, ToEndpoint};
 use protobuf::Message;
 use uuid::Uuid;
 
 type OnConnectRequestCallback = Box<dyn Fn(&Server, &Uuid, &Endpoint) -> bool + 'static>;
-type OnConnectionChangedCallback = Box<dyn Fn(&Server, &Uuid, &Endpoint, ConnectionState) + 'static>;
+type OnConnectionChangedCallback =
+    Box<dyn Fn(&Server, &Uuid, &Endpoint, ConnectionState) + 'static>;
 type OnMessageCallback = Box<dyn Fn(&Server, &Uuid, &Endpoint, i64, Vec<u8>) + 'static>;
-type OnRpcCallback = Box<dyn Fn(&Server,&Uuid, &Endpoint, bool, i64, u64, i64, Vec<u8>) + 'static>;
+type OnRpcCallback = Box<dyn Fn(&Server, &Uuid, &Endpoint, bool, i64, u64, i64, Vec<u8>) + 'static>;
 
 type ServerResult<T> = Result<T, String>; // TODO replace error with enum
 
@@ -39,6 +43,7 @@ pub struct Server<'a> {
     connection_tracker: RefCell<ConnectionTracker>,
     socket: GnsSocket<'static, 'static, IsServer>,
     callbacks: RefCell<ServerCallbacks>,
+    cmd_handlers: RefCell<CmdHandlerContainer<Server<'a>>>,
     phantom: PhantomData<&'a bool>,
 }
 
@@ -53,19 +58,64 @@ impl<'a> Server<'a> {
         let server_socket = gns_socket
             .listen(address_to_bind, port)
             .or(ServerResult::Err("Cannot create server socket".to_string()))?;
-        Ok(Server {
+        let server = Server {
             ip,
             port,
             socket: server_socket,
-            connection_tracker: Default::default(),
+            connection_tracker: RefCell::new(ConnectionTracker::new(Duration::from_secs(3))),
             callbacks: RefCell::new(ServerCallbacks {
                 on_connect_requested_callback: Box::new(|_server, _id, _endpoint| true),
                 on_connection_changed_callback: None,
                 on_message_callback: None,
                 on_rpc_callback: None,
             }),
+            cmd_handlers: RefCell::new(CmdHandlerContainer::new()),
             phantom: Default::default(),
-        })
+        };
+        server.init_default_cmd_handlers();
+        Ok(server)
+    }
+    fn init_default_cmd_handlers(&self) {
+        let mut cmd_handlers = self.cmd_handlers.borrow_mut();
+        _ = cmd_handlers.register_handler(CmdHandler::new(
+            OmgppPredefinedCmd::AUTH,
+            false,
+            Box::new(Server::cmd_auth_handle),
+        ));
+    }
+    fn cmd_auth_handle(
+        &self,
+        uuid: &Uuid,
+        endpoint: &Endpoint,
+        _handler: &CmdHandler<Server>,
+        request: &CmdRequest,
+    ) {
+        let is_authenticated = true;
+        let connection = self.connection_tracker.borrow().client_connection(uuid);
+        if is_authenticated {
+            if let Some(gns_connection) = connection {
+                self.connection_tracker.borrow_mut().track_client_connected(
+                    uuid.clone(),
+                    endpoint.clone(),
+                    gns_connection,
+                );
+                let new_state = self.connection_tracker.borrow().state(uuid);
+                let callbacks = self.callbacks.borrow();
+                if let Some(cb) = &callbacks.on_connection_changed_callback {
+                    cb(self, uuid, endpoint, new_state);
+                }
+                _ = self.send_command(
+                    uuid,
+                    request.cmd.clone(),
+                    request.request_id,
+                    Some(vec!["ok".to_string()]),
+                );
+            }
+        } else {
+            if let Some(gns_connection) = connection {
+                self.socket.close_connection(gns_connection, 0, "", false);
+            }
+        }
     }
     // TODO Maybe it worth to return a Iterator instead of cloning
     pub fn active_clients(&self) -> Vec<(Uuid, Endpoint)> {
@@ -94,14 +144,22 @@ impl<'a> Server<'a> {
             socket_op_result = Server::process_messages(
                 self,
                 msg,
-                &self.connection_tracker.borrow(),
+                &self.connection_tracker,
                 &self.callbacks.borrow(),
             )
         });
 
+        let connection_tracker = self.connection_tracker.borrow();
+        let expired_unverified_connections = connection_tracker
+            .expired_unverified_connections()
+            .enumerate();
+        for (_i, connection) in expired_unverified_connections {
+            println!("{:?}", connection);
+            socket.close_connection(connection, 0, "Unverified", false);
+        }
+
         socket_op_result
     }
-    pub fn socket_poll_messages(&mut self, socket: &GnsNetworkMessage<ToReceive>) {}
     pub fn send(&self, client: &Uuid, msg_type: i64, data: &[u8]) -> ServerResult<()> {
         self.send_with_flags(client, msg_type, data, k_nSteamNetworkingSend_Unreliable)
     }
@@ -109,7 +167,32 @@ impl<'a> Server<'a> {
     pub fn send_reliable(&self, client: &Uuid, msg_type: i64, data: &[u8]) -> ServerResult<()> {
         self.send_with_flags(client, msg_type, data, k_nSteamNetworkingSend_Reliable)
     }
+    pub fn send_command(
+        &self,
+        client: &Uuid,
+        cmd: String,
+        request_id: u64,
+        args: Option<Vec<String>>,
+    ) -> ServerResult<()> {
+        let connection = self
+            .connection_tracker
+            .borrow()
+            .client_connection(client)
+            .ok_or_else(|| "There is not such client to send")?;
 
+        let cmd_bytes =
+            Self::create_cmd_message(cmd, request_id, args.unwrap_or_else(|| Vec::new()))
+                .or_else(|_or| Err("Cannot create cmd message".to_string()))?;
+
+        // TODO check send result
+        let _send_result = TransmitterHelper::send(
+            &self.socket,
+            &[connection],
+            k_nSteamNetworkingSend_Reliable,
+            cmd_bytes.as_slice(),
+        );
+        Ok(())
+    }
     pub fn broadcast(&self, msg_type: i64, data: &[u8]) -> ServerResult<()> {
         let msg_bytes = Server::create_regular_message(msg_type, data)
             .or_else(|_or| Err("Cannot create general message".to_string()))?;
@@ -171,13 +254,13 @@ impl<'a> Server<'a> {
     }
     pub fn register_on_connect_requested(
         &self,
-        callback: impl Fn(&Server,&Uuid, &Endpoint) -> bool + 'static,
+        callback: impl Fn(&Server, &Uuid, &Endpoint) -> bool + 'static,
     ) {
         self.callbacks.borrow_mut().on_connect_requested_callback = Box::from(callback);
     }
     pub fn register_on_connection_state_changed(
         &self,
-        callback: impl Fn(&Server,&Uuid, &Endpoint, ConnectionState) + 'static,
+        callback: impl Fn(&Server, &Uuid, &Endpoint, ConnectionState) + 'static,
     ) {
         self.callbacks.borrow_mut().on_connection_changed_callback = Some(Box::from(callback));
     }
@@ -189,7 +272,7 @@ impl<'a> Server<'a> {
     }
     pub fn register_on_rpc(
         &mut self,
-        callback: impl Fn(&Server,&Uuid, &Endpoint, bool, i64, u64, i64, Vec<u8>) + 'static,
+        callback: impl Fn(&Server, &Uuid, &Endpoint, bool, i64, u64, i64, Vec<u8>) + 'static,
     ) {
         self.callbacks.borrow_mut().on_rpc_callback = Some(Box::from(callback));
     }
@@ -228,26 +311,24 @@ impl<'a> Server<'a> {
             }
             // client disconnected gracefully (? or may be not)
             (
-                ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting
-                | ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connected,
-                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_ClosedByPeer
-                |ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_ProblemDetectedLocally,
+                ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting | ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connected,
+                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_ClosedByPeer | ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_None |ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_ProblemDetectedLocally,
             ) => {
                 connection_tracker.borrow_mut().track_client_disconnected(&client_uuid);
-
+                let state = connection_tracker.borrow().state(&client_uuid);
                 if let Some(cb) = &callbacks.on_connection_changed_callback {
-                    cb(self,&client_uuid, &endpoint, ConnectionState::Disconnected);
+                    cb(self,&client_uuid, &endpoint, state);
                 }
             }
-            // client connected
+            // client connected but auth required
             (
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connecting,
                 ESteamNetworkingConnectionState::k_ESteamNetworkingConnectionState_Connected,
             ) => {
-                connection_tracker.borrow_mut().track_client_connected(client_uuid.clone(),endpoint, event.connection());
-
+                connection_tracker.borrow_mut().track_client_connected_unverified(client_uuid.clone(),endpoint, event.connection());
+                let state = connection_tracker.borrow().state(&client_uuid);
                 if let Some(cb) = &callbacks.on_connection_changed_callback {
-                    cb(self,&client_uuid, &endpoint, ConnectionState::Connected);
+                    cb(self,&client_uuid, &endpoint, state);
                 }
             }
 
@@ -259,16 +340,23 @@ impl<'a> Server<'a> {
     fn process_messages(
         &self,
         event: &GnsNetworkMessage<ToReceive>,
-        connection_tracker: &ConnectionTracker,
+        connection_tracker: &RefCell<ConnectionTracker>,
         callbacks: &ServerCallbacks,
     ) -> ServerResult<()> {
         let data = event.payload();
         let connection = event.connection();
         let sender = connection_tracker
+            .borrow()
             .client_by_connection(&connection)
+            .cloned()
             .ok_or_else(|| "Unknown connection".to_string())?;
+        let is_sender_verified =
+            connection_tracker.borrow().state(&sender) == ConnectionState::Connected;
+
         let endpoint = connection_tracker
-            .client_endpoint(sender)
+            .borrow()
+            .client_endpoint(&sender)
+            .cloned()
             .ok_or_else(|| "Unknown endpoint".to_string())?;
 
         if let Some(decoded) = GeneralOmgppMessage::parse_from_bytes(data).ok() {
@@ -277,22 +365,31 @@ impl<'a> Server<'a> {
                 Some(Data::Message(message)) => {
                     // cb stands for callback
                     if let Some(cb) = &callbacks.on_message_callback {
-                        cb(self,sender, endpoint, message.type_, message.data)
+                        if is_sender_verified {
+                            cb(self, &sender, &endpoint, message.type_, message.data)
+                        }
                     }
                 }
                 Some(Data::Rpc(rpc_call)) => {
                     if let Some(rpc_callback) = &callbacks.on_rpc_callback {
-                        rpc_callback(
-                            self,
-                            sender,
-                            endpoint,
-                            rpc_call.reliable,
-                            rpc_call.method_id,
-                            rpc_call.request_id,
-                            rpc_call.arg_type,
-                            rpc_call.arg_data,
-                        );
+                        if is_sender_verified {
+                            rpc_callback(
+                                self,
+                                &sender,
+                                &endpoint,
+                                rpc_call.reliable,
+                                rpc_call.method_id,
+                                rpc_call.request_id,
+                                rpc_call.arg_type,
+                                rpc_call.arg_data,
+                            );
+                        }
                     };
+                }
+                Some(Data::Cmd(cmd)) => {
+                    self.cmd_handlers
+                        .borrow()
+                        .handle(self, &sender, &endpoint, &cmd);
                 }
                 _ => (),
             }
@@ -357,6 +454,21 @@ impl<'a> Server<'a> {
             None => Vec::new(),
         };
         payload.data = Some(Data::Rpc(rpc));
+        let bytes = payload.write_to_bytes()?;
+        return Ok(bytes);
+    }
+
+    fn create_cmd_message(
+        cmd: String,
+        request_id: u64,
+        args: Vec<String>,
+    ) -> protobuf::Result<Vec<u8>> {
+        let mut payload = GeneralOmgppMessage::new();
+        let mut request = general_omgpp_message::CmdRequest::new();
+        request.cmd = cmd;
+        request.request_id = request_id;
+        request.args = args;
+        payload.data = Some(Data::Cmd(request));
         let bytes = payload.write_to_bytes()?;
         return Ok(bytes);
     }

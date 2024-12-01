@@ -1,6 +1,7 @@
 use std::{
     cell::Cell, io::Read, net::{IpAddr, Ipv4Addr}, rc::Rc, sync::mpsc, thread, time::Instant
 };
+use rand::prelude::*;
 
 use client::Client;
 use omgpp_core::ConnectionState;
@@ -76,10 +77,10 @@ fn start_client() {
         client.register_on_connection_state_changed(move |client,endpoint, state| {
             println!("{:?} {:?}", endpoint, state);
             if state == ConnectionState::Disconnected {
-                should_reconnected_cloned.set(true);
+                // should_reconnected_cloned.set(true);
             }
             if state == ConnectionState::Connected{
-               _= client.send(1, "IM HERE".as_bytes());
+                _= client.send(1, "IM HERE".as_bytes());
             }
         });
 
