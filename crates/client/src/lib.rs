@@ -50,7 +50,6 @@ pub struct Client {
     callbacks: RefCell<ClientCallbacks>,
     connection_tracker: RefCell<ConnectionTracker>,
     cmd_handlers: RefCell<CmdHandlerContainer<Client>>,
-    auth_credentials:Option<Vec<String>>,
 }
 impl Client {
     pub fn new(server_ip: IpAddr, server_port: u16) -> Client {
