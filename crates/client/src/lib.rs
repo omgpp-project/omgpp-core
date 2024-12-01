@@ -69,7 +69,6 @@ impl Client {
                 },
             }),
             cmd_handlers: RefCell::new(CmdHandlerContainer::new()),
-            auth_credentials:None,
         };
         client.init_default_cmd_handlers();
         client
