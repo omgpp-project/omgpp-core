@@ -1,8 +1,9 @@
 pub mod connection_tracker;
 pub mod ffi;
+pub mod server_settings;
 
-use std::cell::{RefCell, RefMut};
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::default;
 use std::time::Duration;
 use std::{fmt::Debug, marker::PhantomData, net::IpAddr};
 
@@ -21,6 +22,7 @@ use omgpp_core::{
 };
 use omgpp_core::{OmgppPredefinedCmd, ToEndpoint};
 use protobuf::Message;
+use server_settings::ServerSettings;
 use uuid::Uuid;
 
 type OnConnectRequestCallback = Box<dyn Fn(&Server, &Uuid, &Endpoint) -> bool + 'static>;
@@ -41,6 +43,7 @@ pub struct Server<'a> {
     ip: IpAddr,
     port: u16,
     connection_tracker: RefCell<ConnectionTracker>,
+    settings:ServerSettings,
     socket: GnsSocket<'static, 'static, IsServer>,
     callbacks: RefCell<ServerCallbacks>,
     cmd_handlers: RefCell<CmdHandlerContainer<Server<'a>>>,
@@ -63,6 +66,7 @@ impl<'a> Server<'a> {
             port,
             socket: server_socket,
             connection_tracker: RefCell::new(ConnectionTracker::new(Duration::from_secs(3))),
+            settings:Default::default(),
             callbacks: RefCell::new(ServerCallbacks {
                 on_connect_requested_callback: Box::new(|_server, _id, _endpoint| true),
                 on_connection_changed_callback: None,
@@ -82,6 +86,7 @@ impl<'a> Server<'a> {
             false,
             Box::new(Server::cmd_auth_handle),
         ));
+        _ = cmd_handlers.register_handler(CmdHandler::new(OmgppPredefinedCmd::RESOURCES, false, Box::new(Server::cmd_resources_handle)));
     }
     fn cmd_auth_handle(
         &self,
@@ -116,6 +121,16 @@ impl<'a> Server<'a> {
                 self.socket.close_connection(gns_connection, 0, "", false);
             }
         }
+    }
+    fn cmd_resources_handle(
+        &self,
+        uuid: &Uuid,
+        _endpoint: &Endpoint,
+        _handler: &CmdHandler<Server>,
+        request: &CmdRequest,
+    ) {
+        let resource_location = self.settings.resource_location.clone();
+        _ = self.send_command(uuid, request.cmd.clone(), request.request_id, Some(vec![resource_location]))
     }
     // TODO Maybe it worth to return a Iterator instead of cloning
     pub fn active_clients(&self) -> Vec<(Uuid, Endpoint)> {

@@ -40,6 +40,8 @@ pub struct Endpoint {
 pub struct  OmgppPredefinedCmd;
 impl OmgppPredefinedCmd {
     pub const AUTH: &str = "omgpp_auth";
+    // returns where server resources are located. Usually it's a HTTP server URL
+    pub const RESOURCES: &str = "omgpp_resources";
 }
 
 pub struct GnsWrapper {
