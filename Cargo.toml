@@ -4,6 +4,7 @@ members = [
     "crates/omgpp-core",
     "crates/server",
     "crates/client",
+    "crates/resource-manager",
     "examples/simple_chat",
 ]
 
