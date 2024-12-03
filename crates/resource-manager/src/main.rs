@@ -1,9 +1,11 @@
 use std::path::Path;
 
-use resource_manager::{AssetCollection, Assets, Folder, Resource, ResourceManager};
+use resource_manager::resource_indexer::{
+    AssetCollection, Assets, Folder, Resource, ResourceIndexer,
+};
 
 fn main() {
-    let mut rm = ResourceManager::new();
+    let mut indexer = ResourceIndexer::new();
     let mut protos = Resource::new("proto", vec![]);
     protos.add(Assets::AssetCollection(AssetCollection::new(vec![
         "proto/**/*",
@@ -14,9 +16,9 @@ fn main() {
         vec!["**/__pycache__/**"],
     )));
 
-    rm.add(protos);
-    rm.add(csharp);
-    rm.create_index("../../../../omgpp/omgpp-protoc-plugin".to_string());
-
+    indexer.add(protos);
+    indexer.add(csharp);
+    let registry = indexer.create_registry("../../../../omgpp/omgpp-protoc-plugin".to_string());
+    println!("{:?}", registry);
     // rm.create_index("/home/rust/omgpp/omgpp-protoc-plugin".to_string());
 }
