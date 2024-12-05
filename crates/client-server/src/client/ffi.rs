@@ -1,4 +1,4 @@
-use crate::Client;
+use crate::client::Client;
 use omgpp_core::{
     ffi::{EndpointFFI, ToFfi},
     ConnectionState,

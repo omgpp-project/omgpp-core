@@ -2,8 +2,7 @@
 resolver = "2"
 members = [
     "crates/omgpp-core",
-    "crates/server",
-    "crates/client",
+    "crates/client-server",
     "crates/resource-manager",
     "examples/simple_chat",
 ]

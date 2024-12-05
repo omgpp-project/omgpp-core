@@ -1,4 +1,4 @@
-mod ffi;
+pub mod ffi;
 
 use std::{
     cell::{Ref, RefCell},

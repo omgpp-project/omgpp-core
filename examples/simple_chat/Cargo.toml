@@ -11,6 +11,5 @@ bimap = { version="0.6.3" }
 protobuf = { version = "3.7.1" }
 either = { version = "1.13.0" }
 omgpp-core = {path = "../../crates/omgpp-core" }
-server= {path = "../../crates/server"}
-client= {path = "../../crates/client"}
+client-server= {path = "../../crates/client-server"}
 rand={ version = "0.8.5" }

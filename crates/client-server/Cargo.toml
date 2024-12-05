@@ -1,5 +1,5 @@
 [package]
-name = "server"
+name = "client-server"
 version = "0.1.0"
 edition = "2021"
 
@@ -19,8 +19,8 @@ features = [
     "fast-rng",          # Use a faster (but still sufficiently random) RNG
     "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
 ]
-[build-dependencies]
-csbindgen = "1.8.0"
-
 [lib]
 crate-type = ["cdylib","rlib"]
+
+[build-dependencies]
+csbindgen = "1.8.0"

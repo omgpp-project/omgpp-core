@@ -1,4 +1,3 @@
-use crate::Server;
 use omgpp_core::{
     ffi::{EndpointFFI, ToFfi, UuidFFI},
     ConnectionState,
@@ -10,6 +9,8 @@ use std::{
     str::FromStr,
 };
 use uuid::Uuid;
+use crate::server::Server;
+
 
 // FFI
 type ServerOnConnectRequested = extern "C" fn(UuidFFI, EndpointFFI) -> bool;

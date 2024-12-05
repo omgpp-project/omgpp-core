@@ -1,13 +1,13 @@
 pub mod connection_tracker;
-pub mod ffi;
 pub mod server_settings;
+pub mod ffi;
 
 use std::cell::RefCell;
-use std::default;
 use std::time::Duration;
 use std::{fmt::Debug, marker::PhantomData, net::IpAddr};
 
 use connection_tracker::ConnectionTracker;
+
 use gns::ToReceive;
 use gns::{GnsConnectionEvent, GnsNetworkMessage, GnsSocket, IsCreated, IsServer};
 use gns_sys::{
@@ -27,11 +27,12 @@ use uuid::Uuid;
 
 type OnConnectRequestCallback = Box<dyn Fn(&Server, &Uuid, &Endpoint) -> bool + 'static>;
 type OnConnectionChangedCallback =
-    Box<dyn Fn(&Server, &Uuid, &Endpoint, ConnectionState) + 'static>;
+Box<dyn Fn(&Server, &Uuid, &Endpoint, ConnectionState) + 'static>;
 type OnMessageCallback = Box<dyn Fn(&Server, &Uuid, &Endpoint, i64, Vec<u8>) + 'static>;
 type OnRpcCallback = Box<dyn Fn(&Server, &Uuid, &Endpoint, bool, i64, u64, i64, Vec<u8>) + 'static>;
 
 type ServerResult<T> = Result<T, String>; // TODO replace error with enum
+
 
 struct ServerCallbacks {
     on_connect_requested_callback: OnConnectRequestCallback,

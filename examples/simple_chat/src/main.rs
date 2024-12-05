@@ -1,11 +1,10 @@
 use std::{
-    cell::Cell, io::Read, net::{IpAddr, Ipv4Addr}, rc::Rc, sync::mpsc, thread, time::Instant
+    cell::Cell, net::{IpAddr, Ipv4Addr}, rc::Rc, sync::mpsc, thread, time::Instant
 };
-use rand::prelude::*;
 
-use client::Client;
+use client_server::client::Client;
+use client_server::server::Server;
 use omgpp_core::ConnectionState;
-use server::Server;
 use std::env;
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -34,7 +33,7 @@ fn main() {
 */
 fn start_server() {
     println!("Hello! Im Server");
-    let mut server = Server::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 55655).unwrap();
+    let server = Server::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 55655).unwrap();
     server.register_on_connect_requested(|_server,_id, _endpoint| true);
     server.register_on_connection_state_changed(|server,id, endpoint, state| {
         let msg= format!("Client {:?} {:?}",endpoint,state);
@@ -51,14 +50,14 @@ fn start_server() {
     });
 
     let mut prev_time = Instant::now();
-    let mut i: i64 = 0;
+    let mut _i: i64 = 0;
     loop {
         _ = server.process::<128>();
         let now = Instant::now();
         let delta = now - prev_time;
         if delta.as_millis() > 1000 {
             prev_time = now;
-            i += 1;
+            _i += 1;
             //_ = server.broadcast(i, format!("Time is {:?}", now).as_bytes());
         }
         // send data to clients with fixed FPS
@@ -70,7 +69,7 @@ fn start_client() {
     let _client_connection_thread = thread::spawn(move || {
         let port: u16 = 55655;
         let should_reconnected = Rc::from(Cell::from(false));
-        let should_reconnected_cloned = should_reconnected.clone(); // Don't know how to pass it inside a closure without cloning
+        let _should_reconnected_cloned = should_reconnected.clone(); // Don't know how to pass it inside a closure without cloning
 
         let mut client = Client::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
 
