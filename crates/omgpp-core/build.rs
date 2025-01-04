@@ -18,13 +18,15 @@ fn main() {
         .cargo_out_dir("proto")
         .run_from_script();
 
-    csbindgen::Builder::default()
+    let core_result = csbindgen::Builder::default()
         .input_extern_file("src/ffi.rs")
         .input_extern_file("src/lib.rs")
         .always_included_types(["EndpointFFI", "UuidFFI","ConnectionState"])
         .csharp_class_name("OmgppCoreNative")
         .csharp_class_accessibility("public")
         .csharp_namespace("OmgppNative")
-        .generate_csharp_file("../../generated/csharp/Core.g.cs")
-        .unwrap();
+        .generate_csharp_file("../../generated/csharp/Core.g.cs");
+    if let Err(error) = core_result {
+        panic!("Failed to generate file: {}", &error.to_string());
+    }
 }
