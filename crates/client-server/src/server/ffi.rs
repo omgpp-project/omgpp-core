@@ -20,25 +20,23 @@ type ServerOnRpc = extern "C" fn(UuidFFI, EndpointFFI,bool, i64, u64, i64, *cons
 
 #[no_mangle]
 pub unsafe extern "C" fn server_create(ip: *const c_char, port: u16) -> *mut Server<'static> {
-    let c_string = CStr::from_ptr(ip).to_str();
-    if c_string.is_err() {
+    let Ok(c_string) = CStr::from_ptr(ip).to_str() else {
         return null_mut();
-    }
+    };
 
-    if let Some(addres) = IpAddr::from_str(c_string.unwrap()).ok() {
-        let server_res = Server::new(addres, port);
-        match server_res {
-            Ok(server) => Box::into_raw(Box::from(server)),
-            Err(_) => null_mut(),
-        }
-    } else {
-        null_mut()
+    let Some(addres) = IpAddr::from_str(c_string).ok() else {
+        return null_mut();
+    };
+    match Server::new(addres, port) {
+        Ok(server) => Box::into_raw(Box::from(server)),
+        Err(_) => null_mut(),
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn server_process(server: *mut Server) {
-    _ = server.as_mut().unwrap().process::<128>();
+    // TODO handle result
+    _ = server.as_mut().expect("Server cannot be null").process::<128>();
 }
 #[no_mangle]
 pub unsafe extern "C" fn server_register_on_connect_requested(
@@ -47,8 +45,8 @@ pub unsafe extern "C" fn server_register_on_connect_requested(
 ) {
     server
         .as_mut()
-        .unwrap()
-        .register_on_connect_requested(move |_server,uuid, endpoint| {
+        .expect("Server cannot be null")
+        .register_on_connect_requested(move |_server, uuid, endpoint| {
             callback(uuid.to_ffi(), endpoint.to_ffi())
         });
 }
@@ -60,7 +58,7 @@ pub unsafe extern "C" fn server_register_on_connection_state_change(
 ) {
     server
         .as_mut()
-        .unwrap()
+        .expect("Server cannot be null")
         .register_on_connection_state_changed(move |_server, uuid, endpoint, state| {
             callback(uuid.to_ffi(), endpoint.to_ffi(), state)
         });
@@ -73,7 +71,7 @@ pub unsafe extern "C" fn server_register_on_message(
 ) {
     server
         .as_mut()
-        .unwrap()
+        .expect("Server cannot be null")
         .register_on_message(move |_server,uuid, endpoint, message_id, data| {
             callback(
                 uuid.to_ffi(),
@@ -91,7 +89,7 @@ pub unsafe extern "C" fn server_register_on_rpc(
 ) {
     server
         .as_mut()
-        .unwrap()
+        .expect("Server cannot be null")
         .register_on_rpc(move |_server,uuid, endpoint, reliable, method_id, request_id, arg_type, arg_data| {
             callback(
                 uuid.to_ffi(),
@@ -114,12 +112,12 @@ pub unsafe extern "C" fn server_send(
     offset: isize,
     size: usize,
 ) {
-
     let msg_data = core::slice::from_raw_parts(data.offset(offset), size);
     let client_uuid = uuid_from_ffi_ptr(uuid);
+    // TODO handle result
     _ = server
         .as_ref()
-        .unwrap()
+        .expect("Server cannot be null")
         .send(&client_uuid, msg_type, msg_data)
 }
 
@@ -134,9 +132,10 @@ pub unsafe extern "C" fn server_send_reliable(
 ) {
     let msg_data = core::slice::from_raw_parts(data.offset(offset), size);
     let client_uuid = uuid_from_ffi_ptr(uuid);
+    // TODO handle result
     _ = server
         .as_ref()
-        .unwrap()
+        .expect("Server cannot be null")
         .send_reliable(&client_uuid, msg_type, msg_data)
 }
 #[no_mangle]
@@ -148,7 +147,11 @@ pub unsafe extern "C" fn server_broadcast(
     size: usize,
 ) {
     let msg_data = core::slice::from_raw_parts(data.offset(offset), size);
-    _ = server.as_ref().unwrap().broadcast(msg_type, msg_data)
+    // TODO handle result
+    _ = server
+        .as_ref()
+        .expect("Server cannot be null")
+        .broadcast(msg_type, msg_data)
 }
 #[no_mangle]
 pub unsafe extern "C" fn server_broadcast_reliable(
@@ -159,9 +162,10 @@ pub unsafe extern "C" fn server_broadcast_reliable(
     size: usize,
 ) {
     let msg_data = core::slice::from_raw_parts(data.offset(offset), size);
+    // TODO handle result
     _ = server
         .as_ref()
-        .unwrap()
+        .expect("Server cannot be null")
         .broadcast_reliable(msg_type, msg_data)
 }
 #[no_mangle]
@@ -181,7 +185,8 @@ pub unsafe extern "C" fn server_call_rpc(
         0 => None,
         _ => Some(core::slice::from_raw_parts(arg_data.offset(arg_data_offset), arg_data_size)),
     };
-    _ = server.as_ref().unwrap().call_rpc(
+    // TODO handle result
+    _ = server.as_ref().expect("Server cannot be null").call_rpc(
         &client_uuid,
         reliable,
         method_id,
@@ -205,7 +210,8 @@ pub unsafe extern "C" fn server_call_rpc_broadcast(
         0 => None,
         _ => Some(core::slice::from_raw_parts(arg_data.offset(arg_data_offset), arg_data_size)),
     };
-    _ = server.as_ref().unwrap().call_rpc_broadcast(
+    // TODO handle result
+    _ = server.as_ref().expect("Server cannot be null").call_rpc_broadcast(
         reliable,
         method_id,
         request_id,
@@ -219,7 +225,7 @@ pub unsafe extern "C" fn server_disconnect(_server: *mut Server, uuid: *const Uu
 
     panic!("server disconnect not implemented")
     // TODO uncomment when disconnect implemented
-    // server.as_ref().unwrap().disconnect();
+    // server.as_ref().expect("Server cannot be null").disconnect();
 }
 #[no_mangle]
 #[allow(unreachable_patterns)]
@@ -233,5 +239,5 @@ pub unsafe extern "C" fn server_destroy(server: *mut Server) {
 }
 
 unsafe fn uuid_from_ffi_ptr(uuid_ffi: *const UuidFFI) -> Uuid {
-    Uuid::from_bytes(uuid_ffi.as_ref().unwrap().bytes)
+    Uuid::from_bytes(uuid_ffi.as_ref().expect("Uuid cannot be null").bytes)
 }

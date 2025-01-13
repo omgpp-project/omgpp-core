@@ -17,12 +17,11 @@ type ClientOnRpc = extern "C" fn(EndpointFFI, bool, i64, u64, i64, *const c_ucha
 
 #[no_mangle]
 pub unsafe extern "C" fn client_create(ip: *const c_char, port: u16) -> *mut Client {
-    let c_string = CStr::from_ptr(ip).to_str();
-    if c_string.is_err() {
+    let Ok(c_string) = CStr::from_ptr(ip).to_str() else {
         return null_mut();
-    }
+    };
 
-    if let Some(addres) = IpAddr::from_str(c_string.unwrap()).ok() {
+    if let Ok(addres) = IpAddr::from_str(c_string) {
         let client = Client::new(addres, port);
         Box::into_raw(Box::from(client))
     } else {
@@ -32,15 +31,17 @@ pub unsafe extern "C" fn client_create(ip: *const c_char, port: u16) -> *mut Cli
 
 #[no_mangle]
 pub unsafe extern "C" fn client_process(client: *mut Client) {
-    _ = client.as_mut().unwrap().process::<128>();
+    // TODO handle result
+    _ = client.as_mut().expect("Client cannot be null").process::<128>();
 }
 #[no_mangle]
 pub unsafe extern "C" fn client_connect(client: *mut Client) {
-    client.as_mut().unwrap().connect().unwrap();
+    // TODO handle result
+    _ = client.as_mut().expect("Client cannot be null").connect();
 }
 #[no_mangle]
 pub unsafe extern "C" fn client_disconnect(client: *mut Client) {
-    client.as_mut().unwrap().disconnect();
+    client.as_mut().expect("Client cannot be null").disconnect();
 }
 
 #[no_mangle]
@@ -50,7 +51,7 @@ pub unsafe extern "C" fn client_register_on_connection_state_change(
 ) {
     client
         .as_mut()
-        .unwrap()
+        .expect("Client cannot be null")
         .register_on_connection_state_changed(move |_client,endpoint, state| {
             callback(endpoint.to_ffi(), state)
         });
@@ -63,14 +64,14 @@ pub unsafe extern "C" fn client_register_on_message(
 ) {
     client
         .as_mut()
-        .unwrap()
+        .expect("Client cannot be null")
         .register_on_message(move |_client,endpoint, message_id, data| {
             callback(endpoint.to_ffi(), message_id, data.as_ptr(), data.len())
         });
 }
 #[no_mangle]
 pub unsafe extern "C" fn client_register_on_rpc(client: *mut Client, callback: ClientOnRpc) {
-    client.as_mut().unwrap().register_on_rpc(
+    client.as_mut().expect("Client cannot be null").register_on_rpc(
         move |_client,endpoint, reliable, method_id, request_id, arg_type, arg_data| {
             callback(
                 endpoint.to_ffi(),
@@ -93,7 +94,7 @@ pub unsafe extern "C" fn client_send(
     size: usize,
 ) {
     let msg_data = core::slice::from_raw_parts(data.offset(offset), size);
-    _ = client.as_mut().unwrap().send(msg_type, msg_data)
+    _ = client.as_mut().expect("Client cannot be null").send(msg_type, msg_data)
 }
 #[no_mangle]
 pub unsafe extern "C" fn client_send_reliable(
@@ -104,7 +105,7 @@ pub unsafe extern "C" fn client_send_reliable(
     size: usize,
 ) {
     let msg_data = core::slice::from_raw_parts(data.offset(offset), size);
-    _ = client.as_mut().unwrap().send_reliable(msg_type, msg_data)
+    _ = client.as_mut().expect("Client cannot be null").send_reliable(msg_type, msg_data)
 }
 #[no_mangle]
 pub unsafe extern "C" fn client_call_rpc(
@@ -123,7 +124,7 @@ pub unsafe extern "C" fn client_call_rpc(
     };
     _ = client
         .as_ref()
-        .unwrap()
+        .expect("Client cannot be null")
         .call_rpc(reliable, method_id, request_id, arg_type, msg_data);
 }
 
